@@ -891,7 +891,6 @@
         let usingAbsoluteOrientation = false; // 絶対方位を使用しているか
         let compassContainerSize = 400; // コンパスコンテナのサイズ（動的に更新）
         let resizeTimer = null; // リサイズイベントのデバウンス用タイマー
-        let tabSwitching = false; // タブ切り替え中フラグ
         
         // チェックポイントのサンプルデータ（福島県南会津町田島駅周辺）
         const sampleCheckpoints = [
@@ -1920,61 +1919,62 @@
             return (θ * 180 / Math.PI + 360) % 360;
         }
         
-        // タブの切り替え（修正版）
+        // タブの切り替え（シンプル版）
         async function switchTab(view, targetTab) {
-            // 多重切り替え防止
-            if (tabSwitching) {
-                debugLog('タブ切り替え中です');
+            debugLog(`タブ切り替え: ${currentView} → ${view}`);
+            
+            // 同じビューへの切り替えは無視
+            if (currentView === view) {
+                debugLog('同じビューです');
                 return;
             }
             
-            tabSwitching = true;
-            debugLog(`タブ切り替え開始: ${currentView} → ${view}`);
-            
-            try {
-                // iOSでコンパスタブを初めてクリックした場合、許可を求める
-                if (view === 'compass' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    const hasListeners = window.ondeviceorientation !== null;
-                    if (!hasListeners) {
+            // iOSでコンパスタブを初めてクリックした場合、許可を求める
+            if (view === 'compass' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                const hasListeners = window.ondeviceorientation !== null;
+                if (!hasListeners) {
+                    try {
                         const granted = await requestCompassPermission();
                         if (!granted) {
-                            tabSwitching = false;
+                            debugLog('コンパス許可が拒否されました');
                             return;
                         }
+                    } catch (error) {
+                        debugLog(`コンパス許可エラー: ${error.message}`);
+                        return;
                     }
                 }
-                
-                currentView = view;
-                
-                // タブのアクティブ状態を更新
-                document.querySelectorAll('.tab').forEach(tab => {
-                    tab.classList.remove('active');
-                });
-                
-                if (targetTab) {
-                    targetTab.classList.add('active');
-                }
-                
-                // ビューの切り替え
-                const mapDiv = document.getElementById('map');
-                const compassDiv = document.getElementById('compass-view');
-                
-                if (view === 'map') {
-                    mapDiv.style.display = 'block';
-                    compassDiv.style.display = 'none';
-                    debugLog('マップビューに切り替えました');
-                } else if (view === 'compass') {
-                    mapDiv.style.display = 'none';
-                    compassDiv.style.display = 'flex';
+            }
+            
+            // ビューを更新
+            currentView = view;
+            
+            // タブのアクティブ状態を更新
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            if (targetTab) {
+                targetTab.classList.add('active');
+            }
+            
+            // ビューの切り替え
+            const mapDiv = document.getElementById('map');
+            const compassDiv = document.getElementById('compass-view');
+            
+            if (view === 'map') {
+                if (mapDiv) mapDiv.style.display = 'block';
+                if (compassDiv) compassDiv.style.display = 'none';
+                debugLog('マップビューに切り替えました');
+            } else if (view === 'compass') {
+                if (mapDiv) mapDiv.style.display = 'none';
+                if (compassDiv) compassDiv.style.display = 'flex';
+                // コンパス表示を更新
+                setTimeout(() => {
                     updateCompassContainerSize();
                     updateCompassDisplay();
-                    debugLog('コンパスビューに切り替えました');
-                }
-                
-            } catch (error) {
-                debugLog(`タブ切り替えエラー: ${error.message}`);
-            } finally {
-                tabSwitching = false;
+                }, 100);
+                debugLog('コンパスビューに切り替えました');
             }
         }
         
@@ -2086,30 +2086,21 @@
         
         // イベントリスナーの設定
         function setupEventListeners() {
-            // タブのイベントリスナー（クリックイベントで統一）
+            // タブのイベントリスナー（シンプル版）
             const tabMap = document.getElementById('tab-map');
             const tabCompass = document.getElementById('tab-compass');
             
-            // クリック/タップの二重実行を防ぐためのフラグ
-            let tabEventProcessing = false;
-            
             if (tabMap) {
-                tabMap.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (tabEventProcessing) return;
-                    tabEventProcessing = true;
+                tabMap.addEventListener('click', function() {
+                    debugLog('マップタブがクリックされました');
                     switchTab('map', tabMap);
-                    setTimeout(() => { tabEventProcessing = false; }, 300);
                 });
             }
             
             if (tabCompass) {
-                tabCompass.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (tabEventProcessing) return;
-                    tabEventProcessing = true;
+                tabCompass.addEventListener('click', function() {
+                    debugLog('コンパスタブがクリックされました');
                     switchTab('compass', tabCompass);
-                    setTimeout(() => { tabEventProcessing = false; }, 300);
                 });
             }
             
