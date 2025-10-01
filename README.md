@@ -297,7 +297,3 @@ await compressImage(file, 800, 0.5)  // 800px, 50%品質
 1. ブラウザのコンソールでエラーを確認
 2. DevToolsのApplicationタブでPWA状態を確認
 3. Lighthouse監査を実行
-
----
-
-**すべてのファイルは /mnt/user-data/outputs/ に保存されています。**
