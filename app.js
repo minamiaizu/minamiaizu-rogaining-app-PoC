@@ -61,6 +61,8 @@ let currentView = 'map';
 let compassContainerSize = 400;
 let currentHeading = 0;
 let rotationTotal = 0; // コンパス回転用の累積角度
+let activeTooltip = null; // 現在表示中のツールチップ
+let tooltipTimeout = null; // ツールチップの自動非表示タイマー
 let ar = {
   stream: null,
   ctx: null,
@@ -129,7 +131,16 @@ function initMap(){
   map.setView([37.20329853, 139.77424063], 14);
 
   checkpoints.forEach(cp => {
-    L.marker([cp.lat, cp.lng]).addTo(map).bindPopup(`${cp.name} (${cp.points}点)`);
+    const isCompleted = completedCheckpoints.has(cp.id);
+    const marker = L.marker([cp.lat, cp.lng], {
+      icon: L.divIcon({
+        className: 'custom-icon',
+        html: `<div style="background: ${isCompleted ? '#48bb78' : '#667eea'}; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">${cp.points}</div>`,
+        iconSize: [30, 30]
+      })
+    }).addTo(map);
+    
+    marker.bindPopup(`<strong>${cp.name}</strong><br>${cp.points}点${isCompleted ? '<br>✅ クリア済み' : ''}`);
   });
 }
 
@@ -520,6 +531,16 @@ function updateCheckpointMarkers(){
     marker.style.transform = `rotate(${-rotationTotal}deg)`;
     
     marker.title = `${cp.name}: ${Math.round(d)}m`;
+    
+    // クリックイベントでツールチップ表示
+    marker.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const rect = marker.getBoundingClientRect();
+      const tooltipX = rect.left + rect.width / 2;
+      const tooltipY = rect.top;
+      showTooltip(`${cp.name}: ${Math.round(d)}m`, tooltipX, tooltipY);
+    });
+    
     markersContainer.appendChild(marker);
   });
   
@@ -552,6 +573,16 @@ function updateDistanceBar(minDist, maxDist){
     marker.style.background = color;
     marker.style.left = `${position}%`;
     marker.title = `${cp.name}: ${Math.round(d)}m`;
+    
+    // クリックイベントでツールチップ表示
+    marker.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const rect = marker.getBoundingClientRect();
+      const tooltipX = rect.left + rect.width / 2;
+      const tooltipY = rect.top;
+      showTooltip(`${cp.name}: ${Math.round(d)}m`, tooltipX, tooltipY);
+    });
+    
     bar.appendChild(marker);
   });
 }
@@ -563,6 +594,31 @@ function getDistanceColor(distance, minDist, maxDist){
   if (normalized <= 0.5) hue = 240 - (120 * normalized * 2);
   else hue = 120 - (120 * (normalized - 0.5) * 2);
   return `hsl(${hue}, 80%, 50%)`;
+}
+
+/* ======== Tooltip ======== */
+function showTooltip(text, x, y){
+  hideTooltip();
+  
+  const tooltip = document.createElement('div');
+  tooltip.className = 'custom-tooltip';
+  tooltip.textContent = text;
+  tooltip.style.left = x + 'px';
+  tooltip.style.top = y + 'px';
+  
+  document.body.appendChild(tooltip);
+  activeTooltip = tooltip;
+  
+  clearTimeout(tooltipTimeout);
+  tooltipTimeout = setTimeout(hideTooltip, 3000);
+}
+
+function hideTooltip(){
+  if (activeTooltip){
+    document.body.removeChild(activeTooltip);
+    activeTooltip = null;
+  }
+  clearTimeout(tooltipTimeout);
 }
 
 /* ======== Tabs ======== */
@@ -771,6 +827,14 @@ document.getElementById('photo-input')?.addEventListener('change', handlePhoto);
 document.getElementById('check-button')?.addEventListener('click', checkNearby);
 document.getElementById('tracking-button')?.addEventListener('click', toggleTracking);
 document.getElementById('clear-button')?.addEventListener('click', clearLocalStorage);
+
+// ツールチップ非表示用のクリックイベント
+document.addEventListener('click', (e) => {
+  if (activeTooltip && !e.target.classList.contains('checkpoint-marker') && 
+      !e.target.classList.contains('distance-marker')) {
+    hideTooltip();
+  }
+});
 
 /* ======== Init ======== */
 (function init(){
