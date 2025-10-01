@@ -53,7 +53,7 @@ let startTime = Date.now();
 let remainingTime = 120 * 60; // sec
 let timerInterval = null;
 let isOnline = navigator.onLine;
-let trackingEnabled = false;
+let trackingEnabled = true;
 let trackingInterval = null;
 let trackPoints = [];
 let trackPolyline = null;
@@ -362,12 +362,12 @@ function updateTrackingButton(){
     b.textContent='⏸️ 軌跡記録を停止'; 
     b.classList.remove('button-success'); 
     b.classList.add('danger'); 
+    b.style.background = '#48bb78'; // 緑色
   } else { 
     b.textContent='▶️ 軌跡記録を開始'; 
     b.classList.remove('danger'); 
     b.classList.add('button-success'); 
-    // 停止時はオレンジ色にする
-    b.style.background = '#ed8936';
+    b.style.background = '#ed8936'; // オレンジ色
   }
 }
 function updateTrackPolyline(){
@@ -784,5 +784,9 @@ document.getElementById('clear-button')?.addEventListener('click', clearLocalSto
   updateCompassContainerSize();
   startOrientation();
   startTimer();
+  // 軌跡記録を自動開始
+  if (trackingEnabled) {
+    startTracking();
+  }
   document.getElementById('max-distance-label').textContent = '1km';
 })();
