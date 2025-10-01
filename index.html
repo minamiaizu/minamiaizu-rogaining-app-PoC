@@ -322,16 +322,14 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: min(85vw, 85vh, 500px);
-            height: min(85vw, 85vh, 500px);
-            max-width: 500px;
-            max-height: 500px;
+            width: min(85vw, 85vh, 400px);
+            height: min(85vw, 85vh, 400px);
         }
         
         @media (max-width: 768px) {
             #compass-container {
-                width: min(90vw, calc(100vh - 300px));
-                height: min(90vw, calc(100vh - 300px));
+                width: min(90vw, calc(100vh - 300px), 350px);
+                height: min(90vw, calc(100vh - 300px), 350px);
             }
         }
         
@@ -494,9 +492,8 @@
         
         #checkpoint-markers {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+            top: 0;
+            left: 0;
             width: 100%;
             height: 100%;
             pointer-events: none;
@@ -519,6 +516,7 @@
             border: 3px solid white;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
             transition: transform 0.3s ease-out;
+            pointer-events: auto;
         }
         
         @media (max-width: 768px) {
@@ -684,6 +682,16 @@
             font-size: 20px;
         }
         
+        /* Canvas要素を正しく配置 */
+        #compass-ticks {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
     </style>
 </head>
 <body>
@@ -702,7 +710,7 @@
     <div id="header">
         <h1>🏃 ロゲイニング PoC</h1>
         <div id="tabs">
-            <div class="tab active" onclick="switchTab('map')">📍 マップ</div>
+            <div class="tab active" onclick="switchTab('map')">🗺 マップ</div>
             <div class="tab" id="compass-tab" onclick="switchTab('compass')" style="display: none;">🧭 コンパス</div>
         </div>
         <div id="status">
@@ -725,7 +733,7 @@
                 <div class="compass-subdirection" style="top: 50%; right: 15%; transform: translate(0, -50%);">90°</div>
                 <div class="compass-subdirection" style="bottom: 15%; left: 50%; transform: translate(-50%, 0);">180°</div>
                 <div class="compass-subdirection" style="top: 50%; left: 15%; transform: translate(0, -50%);">270°</div>
-                <canvas id="compass-ticks" width="500" height="500" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></canvas>
+                <canvas id="compass-ticks"></canvas>
                 <div id="compass-center"></div>
             </div>
             <div id="checkpoint-markers"></div>
@@ -806,7 +814,7 @@
     </div>
     
     <div id="debug">
-        <strong>🐛 デバッグログ</strong>
+        <strong>🛠 デバッグログ</strong>
         <div id="debug-log"></div>
     </div>
     
@@ -902,13 +910,14 @@
         let trackPolyline = null; // 地図上の軌跡線
         let compassSupported = false; // コンパス機能のサポート状況
         let currentHeading = 0; // 現在の方位
-        let previousHeading = 0; // 前回の方位（スムーズな回転のため）
-        let smoothHeading = 0; // CSS transformに適用する累積角度
+        let rotationTotal = 0; // 累積回転角度（スムーズな回転用）
         let currentView = 'map'; // 現在のビュー（map/compass）
         let activeTooltip = null; // 現在表示中のツールチップ
         let tooltipTimeout = null; // ツールチップの自動非表示タイマー
         let compassCalibrated = false; // 磁気センサーの較正状態
         let usingAbsoluteOrientation = false; // 絶対方位を使用しているか
+        let compassContainerSize = 400; // コンパスコンテナのサイズ（動的に更新）
+        let resizeTimer = null; // リサイズイベントのデバウンス用タイマー
         
         // チェックポイントのサンプルデータ（福島県南会津町田島駅周辺）
         // 会津田島駅から遠いほど高得点に設定（5点刻み）
@@ -1173,8 +1182,38 @@
             // コンパス機能の初期化
             initCompass();
             
-            // コンパスの目盛りを描画
-            drawCompassTicks();
+            // コンパスコンテナのサイズを初期化
+            updateCompassContainerSize();
+            
+            // リサイズイベントリスナーを追加
+            window.addEventListener('resize', handleResize);
+        }
+        
+        // リサイズハンドラ（デバウンス付き）
+        function handleResize() {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                updateCompassContainerSize();
+                if (currentView === 'compass') {
+                    drawCompassTicks();
+                    updateCompassDisplay();
+                }
+            }, 250);
+        }
+        
+        // コンパスコンテナのサイズを更新
+        function updateCompassContainerSize() {
+            const container = document.getElementById('compass-container');
+            if (container) {
+                compassContainerSize = container.offsetWidth;
+                // Canvasのサイズも更新
+                const canvas = document.getElementById('compass-ticks');
+                if (canvas) {
+                    canvas.width = compassContainerSize;
+                    canvas.height = compassContainerSize;
+                    drawCompassTicks();
+                }
+            }
         }
         
         // コンパスの目盛りを描画
@@ -1183,11 +1222,12 @@
             if (!canvas) return;
             
             const ctx = canvas.getContext('2d');
-            const centerX = canvas.width / 2;
-            const centerY = canvas.height / 2;
-            const radius = canvas.width / 2 - 20;
+            const size = compassContainerSize;
+            const centerX = size / 2;
+            const centerY = size / 2;
+            const radius = size / 2 - 20;
             
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.clearRect(0, 0, size, size);
             
             // 度数ごとに目盛りを描画
             for (let i = 0; i < 360; i++) {
@@ -1816,30 +1856,34 @@
             updateCompassDisplay();
         }
         
-        // コンパス表示の更新
+        // コンパス表示の更新（修正版）
         function updateCompassDisplay() {
             const compassCircle = document.getElementById('compass-circle');
             const headingDisplay = document.getElementById('heading-display');
             
             if (compassCircle) {
-                // 360度と0度の境界でスムーズに回転させるための処理
-                let targetHeading = currentHeading;
-                let diff = targetHeading - previousHeading;
+                // 現在の方位を正規化（0-360の範囲に収める）
+                let normalizedHeading = currentHeading % 360;
+                if (normalizedHeading < 0) normalizedHeading += 360;
                 
-                // 差分が180度以上の場合、最短経路で回転
+                // 累積角度から現在の方位への最短経路を計算
+                let currentRotation = rotationTotal % 360;
+                if (currentRotation < 0) currentRotation += 360;
+                
+                let diff = normalizedHeading - currentRotation;
+                
+                // 最短経路を計算
                 if (diff > 180) {
                     diff -= 360;
                 } else if (diff < -180) {
                     diff += 360;
                 }
                 
-                // スムーズな角度を計算
-                smoothHeading = previousHeading + diff;
+                // 累積角度を更新
+                rotationTotal += diff;
                 
-                // 360度を超える/0度未満の場合の処理（CSSでは問題ないが、次回の計算のため正規化）
-                previousHeading = targetHeading;
-                
-                compassCircle.style.transform = `rotate(${smoothHeading}deg)`;
+                // CSSトランスフォームを適用
+                compassCircle.style.transform = `rotate(${rotationTotal}deg)`;
             }
             
             if (headingDisplay) {
@@ -1880,14 +1924,14 @@
                 distances.push(distance);
             });
             
+            if (distances.length === 0) return;
+            
             const minDistance = Math.min(...distances);
             const maxDistance = Math.max(...distances);
             
             // コンパスコンテナのサイズを取得
-            const compassContainer = document.getElementById('compass-container');
-            const containerSize = compassContainer ? compassContainer.offsetWidth : 280;
-            const centerPoint = containerSize / 2;
-            const radius = centerPoint * 0.88; // 中心から88%の位置
+            const centerPoint = compassContainerSize / 2;
+            const radius = centerPoint * 0.85; // 中心から85%の位置
             
             checkpoints.forEach(cp => {
                 if (completedCheckpoints.has(cp.id)) return; // クリア済みは表示しない
@@ -1923,7 +1967,7 @@
                 
                 marker.style.left = x + 'px';
                 marker.style.top = y + 'px';
-                marker.style.transform = `translate(-50%, -50%) rotate(${-currentHeading}deg)`;
+                marker.style.transform = `rotate(${-rotationTotal}deg)`;
                 
                 // タップイベントを追加
                 marker.addEventListener('click', (e) => {
@@ -2100,6 +2144,7 @@
             } else if (view === 'compass') {
                 document.getElementById('map').style.display = 'none';
                 document.getElementById('compass-view').style.display = 'flex';
+                updateCompassContainerSize(); // コンパス表示時にサイズを再計算
                 updateCompassDisplay();
             }
             
