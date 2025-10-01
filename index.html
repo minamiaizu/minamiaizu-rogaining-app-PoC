@@ -497,8 +497,8 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 280px;
-            height: 280px;
+            width: 100%;
+            height: 100%;
             pointer-events: none;
         }
         
@@ -902,6 +902,7 @@
         let trackPolyline = null; // 地図上の軌跡線
         let compassSupported = false; // コンパス機能のサポート状況
         let currentHeading = 0; // 現在の方位
+        let previousHeading = 0; // 前回の方位（スムーズな回転のため）
         let currentView = 'map'; // 現在のビュー（map/compass）
         let activeTooltip = null; // 現在表示中のツールチップ
         let tooltipTimeout = null; // ツールチップの自動非表示タイマー
@@ -1820,7 +1821,24 @@
             const headingDisplay = document.getElementById('heading-display');
             
             if (compassCircle) {
-                compassCircle.style.transform = `rotate(${currentHeading}deg)`;
+                // 360度と0度の境界でスムーズに回転させるための処理
+                let targetHeading = currentHeading;
+                let diff = targetHeading - previousHeading;
+                
+                // 差分が180度以上の場合、最短経路で回転
+                if (diff > 180) {
+                    diff -= 360;
+                } else if (diff < -180) {
+                    diff += 360;
+                }
+                
+                // スムーズな角度を計算
+                let smoothHeading = previousHeading + diff;
+                
+                // 360度を超える/0度未満の場合の処理（CSSでは問題ないが、次回の計算のため正規化）
+                previousHeading = targetHeading;
+                
+                compassCircle.style.transform = `rotate(${smoothHeading}deg)`;
             }
             
             if (headingDisplay) {
