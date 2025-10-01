@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
   <!-- App CSS -->
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles_fixed.css">
 
 </head>
 <body>
@@ -86,8 +86,12 @@
 
     <!-- AR view -->
     <section id="ar-view" hidden>
+      <video id="camera" autoplay playsinline muted></video>
+      <canvas id="ar-canvas"></canvas>
       <div class="ar-overlay">
-        <div class="ar-top-strip" id="heading-strip" aria-hidden="true"></div>
+        <div class="ar-top-strip">
+          <div id="heading-strip"></div>
+        </div>
         <div class="ar-range">
           <button type="button" class="range-btn" data-range="250">250m</button>
           <button type="button" class="range-btn" data-range="500">500m</button>
@@ -97,8 +101,6 @@
           <span class="ar-countdown">残り <span id="ar-remaining">05:00</span></span>
         </div>
       </div>
-      <video id="camera" autoplay playsinline muted></video>
-      <canvas id="ar-canvas"></canvas>
     </section>
 
     <!-- Controls -->
@@ -120,7 +122,7 @@
       <div class="info-item"><span class="info-label">GPS精度</span><span class="info-value" id="gps-accuracy">-</span></div>
       <div class="info-item"><span class="info-label">撮影写真</span><span class="info-value" id="photo-count">0枚</span></div>
       <div class="info-item"><span class="info-label">軌跡ポイント</span><span class="info-value" id="track-count">0個</span></div>
-      <div class="info-item"><span class="info-label">クリア数</span><span class="info-value" id="cleared-count">0 / 5</span></div>
+      <div class="info-item"><span class="info-label">クリア数</span><span class="info-value" id="cleared-count">0 / 8</span></div>
     </section>
 
     <!-- Checkpoint list -->
@@ -152,6 +154,6 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <!-- App JS -->
-  <script src="app.js"></script>
+  <script src="app_fixed.js"></script>
 </body>
 </html>

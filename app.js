@@ -60,20 +60,25 @@ let trackPolyline = null;
 let currentView = 'map';
 let compassContainerSize = 400;
 let currentHeading = 0;
-let rotationTotal = 0; // コンパス回転用の累積角度
-let activeTooltip = null; // 現在表示中のツールチップ
-let tooltipTimeout = null; // ツールチップの自動非表示タイマー
+let rotationTotal = 0;
+let activeTooltip = null;
+let tooltipTimeout = null;
+let devicePitch = 0; // デバイスの上下傾き
 let ar = {
   stream: null,
   ctx: null,
   canvas: null,
   video: null,
   fovH: 60 * Math.PI/180,
-  fovV: 40 * Math.PI/180,
+  fovV: 45 * Math.PI/180,
   range: 1000,
   timerId: null,
   secondsLeft: 300,
-  selectedCameraId: null, // 選択されたカメラID
+  selectedCameraId: null,
+  lastFrameTime: 0,
+  fpsLimit: 30,
+  distanceCache: {},
+  lastCacheTime: 0
 };
 
 const STORAGE_KEY = 'rogaining_data';
@@ -171,7 +176,7 @@ function loadFromLocalStorage(){
     remainingTime = data.remainingTime ?? remainingTime;
     startTime = data.startTime || Date.now();
     trackPoints = data.trackPoints || [];
-    trackingEnabled = !!data.trackingEnabled;
+    trackingEnabled = data.trackingEnabled !== undefined ? data.trackingEnabled : true;
     photos = data.photos || [];
     ar.selectedCameraId = data.selectedCameraId || null;
     debugLog('LocalStorageから復元');
@@ -259,8 +264,16 @@ function getCurrentLocation(){
   }
   if (!navigator.geolocation){ alert('このブラウザは位置情報に非対応'); return; }
   navigator.geolocation.getCurrentPosition((pos)=>{
-    currentPosition = {lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy};
+    currentPosition = {
+      lat:pos.coords.latitude,
+      lng:pos.coords.longitude,
+      accuracy:pos.coords.accuracy,
+      elevation: pos.coords.altitude || 650 // 標高を取得（取得できない場合はデフォルト値）
+    };
     debugLog(`位置情報: ${currentPosition.lat.toFixed(6)}, ${currentPosition.lng.toFixed(6)} ±${currentPosition.accuracy.toFixed(1)}m`);
+    if (currentPosition.elevation) {
+      debugLog(`標高: ${currentPosition.elevation.toFixed(1)}m`);
+    }
     if (currentPositionMarker) map.removeLayer(currentPositionMarker);
     currentPositionMarker = L.marker([currentPosition.lat,currentPosition.lng],{
       icon: L.divIcon({className:'current-position-icon',html:'<div style="background:#48bb78;border:4px solid #fff;border-radius:50%;width:20px;height:20px;box-shadow:0 0 10px rgba(72,187,120,.6);"></div>',iconSize:[20,20]})
@@ -340,9 +353,20 @@ function startTracking(){
   debugLog('軌跡記録を開始');
   const track = ()=>{
     navigator.geolocation.getCurrentPosition((pos)=>{
-      const point = { lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy, timestamp:new Date().toISOString() };
+      const point = { 
+        lat:pos.coords.latitude, 
+        lng:pos.coords.longitude, 
+        accuracy:pos.coords.accuracy, 
+        elevation: pos.coords.altitude || null,
+        timestamp:new Date().toISOString() 
+      };
       trackPoints.push(point);
-      currentPosition = {lat:point.lat,lng:point.lng,accuracy:point.accuracy};
+      currentPosition = {
+        lat:point.lat,
+        lng:point.lng,
+        accuracy:point.accuracy,
+        elevation: point.elevation || currentPosition?.elevation || 650
+      };
       if (currentPositionMarker) map.removeLayer(currentPositionMarker);
       currentPositionMarker = L.marker([currentPosition.lat,currentPosition.lng],{
         icon: L.divIcon({className:'current-position-icon',html:'<div style="background:#48bb78;border:4px solid #fff;border-radius:50%;width:20px;height:20px;box-shadow:0 0 10px rgba(72,187,120,.6);"></div>',iconSize:[20,20]})
@@ -373,12 +397,12 @@ function updateTrackingButton(){
     b.textContent='⏸️ 軌跡記録を停止'; 
     b.classList.remove('button-success'); 
     b.classList.add('danger'); 
-    b.style.background = '#48bb78'; // 緑色
+    b.style.background = '#48bb78';
   } else { 
     b.textContent='▶️ 軌跡記録を開始'; 
     b.classList.remove('danger'); 
     b.classList.add('button-success'); 
-    b.style.background = '#ed8936'; // オレンジ色
+    b.style.background = '#ed8936';
   }
 }
 function updateTrackPolyline(){
@@ -465,6 +489,19 @@ function startOrientation(){
   }
 }
 
+/* ======== Device motion (傾き検出) ======== */
+function startDeviceMotion(){
+  if (typeof DeviceMotionEvent !== 'undefined') {
+    window.addEventListener('devicemotion', (e)=>{
+      if (e.rotationRate && e.rotationRate.beta !== null) {
+        // betaは前後の傾き（-180〜180度）
+        devicePitch = e.rotationRate.beta || 0;
+      }
+    });
+    debugLog('デバイス傾き検出を開始');
+  }
+}
+
 /* ======== Compass display update ======== */
 function updateCompassDisplay(){
   const compassCircle = document.getElementById('compass-circle');
@@ -532,7 +569,6 @@ function updateCheckpointMarkers(){
     
     marker.title = `${cp.name}: ${Math.round(d)}m`;
     
-    // クリックイベントでツールチップ表示
     marker.addEventListener('click', (e) => {
       e.stopPropagation();
       const rect = marker.getBoundingClientRect();
@@ -574,7 +610,6 @@ function updateDistanceBar(minDist, maxDist){
     marker.style.left = `${position}%`;
     marker.title = `${cp.name}: ${Math.round(d)}m`;
     
-    // クリックイベントでツールチップ表示
     marker.addEventListener('click', (e) => {
       e.stopPropagation();
       const rect = marker.getBoundingClientRect();
@@ -693,6 +728,33 @@ async function showCameraSelector(){
   return new Promise(resolve => {});
 }
 
+/* ======== AR helper functions ======== */
+function isInView(relativeBearing, elevationAngle){
+  const fovH = ar.fovH * 180 / Math.PI;
+  const fovV = ar.fovV * 180 / Math.PI;
+  return Math.abs(relativeBearing) < fovH / 2 && Math.abs(elevationAngle * 180 / Math.PI) < fovV / 2;
+}
+
+function getMarkerSizeByRange(){
+  if (ar.range <= 250) return { marker: 50, font: 16 };
+  if (ar.range <= 500) return { marker: 50, font: 16 };
+  if (ar.range <= 1000) return { marker: 40, font: 14 };
+  if (ar.range <= 2500) return { marker: 30, font: 12 };
+  return { marker: 30, font: 12 };
+}
+
+function getCachedDistance(cpId, lat1, lon1, lat2, lon2){
+  const now = Date.now();
+  if (now - ar.lastCacheTime > 1000) {
+    ar.distanceCache = {};
+    ar.lastCacheTime = now;
+  }
+  if (!ar.distanceCache[cpId]) {
+    ar.distanceCache[cpId] = distance(lat1, lon1, lat2, lon2);
+  }
+  return ar.distanceCache[cpId];
+}
+
 /* ======== AR (camera + overlay) ======== */
 async function startAR(){
   const video = document.getElementById('camera');
@@ -713,12 +775,13 @@ async function startAR(){
     await video.play();
     resizeARCanvas();
     startOrientation();
+    startDeviceMotion();
     startARTimer();
+    ar.lastFrameTime = performance.now();
     requestAnimationFrame(arLoop);
     debugLog('📷 カメラ開始 (AR)');
   }catch(e){
     debugLog('カメラ起動に失敗: ' + e.message);
-    // カメラ選択モーダルを表示
     const cameras = await getCameraDevices();
     if (cameras.length > 1){
       await showCameraSelector();
@@ -732,6 +795,7 @@ async function startAR(){
 function stopAR(){
   if (ar.stream){ ar.stream.getTracks().forEach(t=>t.stop()); ar.stream=null; }
   if (ar.timerId){ clearInterval(ar.timerId); ar.timerId=null; }
+  ar.distanceCache = {};
 }
 
 function resizeARCanvas(){
@@ -744,41 +808,74 @@ window.addEventListener('resize', ()=>{
   if(currentView==='ar') resizeARCanvas(); 
 });
 
-function arLoop(){
+function arLoop(currentTime){
   if (currentView!=='ar') return;
+  
+  // FPS制限
+  if (currentTime - ar.lastFrameTime < 1000 / ar.fpsLimit) {
+    requestAnimationFrame(arLoop);
+    return;
+  }
+  ar.lastFrameTime = currentTime;
+  
   const ctx = ar.ctx;
   const w = ar.canvas.width, h = ar.canvas.height;
   ctx.clearRect(0,0,w,h);
 
   if (!currentPosition){ requestAnimationFrame(arLoop); return; }
 
+  // 方位テープ更新
   const strip = document.getElementById('heading-strip');
-  strip.style.backgroundPositionX = `-${currentHeading*2}px`;
+  if (strip) {
+    strip.style.backgroundPositionX = `-${currentHeading*2}px`;
+  }
+
+  // レンジ基準のマーカーサイズ取得
+  const sizes = getMarkerSizeByRange();
 
   checkpoints.forEach(cp => {
-    const d = distance(currentPosition.lat,currentPosition.lng,cp.lat,cp.lng);
+    // 距離計算（キャッシュ使用）
+    const d = getCachedDistance(cp.id, currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    
+    // レンジ外は早期リターン
     if (d > ar.range) return;
-    const b = bearing(currentPosition.lat,currentPosition.lng, cp.lat, cp.lng);
-    let rel = ((b - currentHeading + 540) % 360) - 180;
-    const x = w/2 + (rel * (Math.PI/180)) / ar.fovH * w;
-    const elevDiff = (cp.elevation??0) - (currentPosition.elevation??0);
+    
+    // 方位計算
+    const b = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    let rel = ((b - currentHeading + 540) % 360) - 180; // -180〜180
+    
+    // 標高差と仰角計算
+    const elevDiff = (cp.elevation ?? 650) - (currentPosition.elevation ?? 650);
     const horiz = Math.max(1, d);
     const elevAngle = Math.atan2(elevDiff, horiz);
-    const y = h/2 - (elevAngle / ar.fovV) * h;
+    
+    // 視野内判定
+    if (!isInView(rel, elevAngle)) return;
+    
+    // 画面座標計算
+    const x = w/2 + (rel * (Math.PI/180)) / ar.fovH * w;
+    const y = h/2 - elevAngle / ar.fovV * h;
 
-    const size = d<=500?16: d<=1000?14:12;
-    const r = d<=500?10:8;
+    // マーカー描画
+    const r = sizes.marker / 2;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI*2);
-    ctx.fillStyle = completedCheckpoints.has(cp.id)?'#48bb78':'#667eea';
+    ctx.fillStyle = completedCheckpoints.has(cp.id) ? '#48bb78' : '#667eea';
     ctx.fill();
-    ctx.font = `bold ${size}px system-ui, -apple-system`;
-    ctx.textAlign='center'; ctx.textBaseline='top';
+    
+    // ラベル描画
+    ctx.font = `bold ${sizes.font}px system-ui, -apple-system`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
     ctx.fillStyle = '#fff';
-    ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.lineWidth=4;
-    const label = `${cp.name} ${Math.round(d)}m` + (elevDiff?` ${elevDiff>0?`+${Math.round(elevDiff)}`:`${Math.round(elevDiff)}`}m`:'');
-    ctx.strokeText(label, x, y+r+4);
-    ctx.fillText(label, x, y+r+4);
+    ctx.strokeStyle = 'rgba(0,0,0,.6)';
+    ctx.lineWidth = 4;
+    
+    const elevText = elevDiff !== 0 ? ` ${elevDiff > 0 ? '+' : ''}${Math.round(elevDiff)}m` : '';
+    const label = `${cp.name} ${Math.round(d)}m${elevText}`;
+    
+    ctx.strokeText(label, x, y + r + 4);
+    ctx.fillText(label, x, y + r + 4);
   });
 
   requestAnimationFrame(arLoop);
@@ -789,7 +886,10 @@ for (const btn of document.querySelectorAll('.range-btn')){
     for (const b of document.querySelectorAll('.range-btn')) b.classList.remove('active');
     btn.classList.add('active');
     ar.range = Number(btn.dataset.range);
-    document.getElementById('max-distance-label').textContent = ar.range >= 1000 ? `${ar.range/1000}km` : `${ar.range}m`;
+    ar.distanceCache = {}; // キャッシュクリア
+    const label = ar.range >= 1000 ? `${ar.range/1000}km` : `${ar.range}m`;
+    document.getElementById('max-distance-label').textContent = label;
+    debugLog(`AR表示レンジ: ${label}`);
   });
 }
 
@@ -802,6 +902,12 @@ function startARTimer(){
     const m = String(Math.floor(ar.secondsLeft/60)).padStart(2,'0');
     const s = String(ar.secondsLeft%60).padStart(2,'0');
     document.getElementById('ar-remaining').textContent = `${m}:${s}`;
+    
+    // 段階的機能制限（3分経過で警告）
+    if (ar.secondsLeft === 120) {
+      debugLog('⚠️ AR残り2分：バッテリー節約のため間もなく終了します');
+    }
+    
     if (ar.secondsLeft<=0){
       clearInterval(ar.timerId); ar.timerId=null;
       alert('ARモードを終了します(5分経過)');
@@ -828,7 +934,6 @@ document.getElementById('check-button')?.addEventListener('click', checkNearby);
 document.getElementById('tracking-button')?.addEventListener('click', toggleTracking);
 document.getElementById('clear-button')?.addEventListener('click', clearLocalStorage);
 
-// ツールチップ非表示用のクリックイベント
 document.addEventListener('click', (e) => {
   if (activeTooltip && !e.target.classList.contains('checkpoint-marker') && 
       !e.target.classList.contains('distance-marker')) {
@@ -848,9 +953,9 @@ document.addEventListener('click', (e) => {
   updateCompassContainerSize();
   startOrientation();
   startTimer();
-  // 軌跡記録を自動開始
   if (trackingEnabled) {
     startTracking();
   }
   document.getElementById('max-distance-label').textContent = '1km';
+  debugLog('アプリケーション初期化完了');
 })();
