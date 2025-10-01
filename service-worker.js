@@ -1,6 +1,6 @@
 const CACHE_NAME = 'rogaining-v1';
 const urlsToCache = [
-  '/rogaining-poc.html',
+  '/index.html',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
 ];
