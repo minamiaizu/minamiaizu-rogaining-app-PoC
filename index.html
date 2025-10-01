@@ -284,6 +284,8 @@
             display: flex;
             gap: 10px;
             margin-top: 10px;
+            position: relative;
+            z-index: 1000;
         }
         
         .tab {
@@ -297,6 +299,9 @@
             transition: all 0.3s;
             /* iOS タッチイベント最適化 */
             -webkit-tap-highlight-color: transparent;
+            pointer-events: auto;
+            position: relative;
+            z-index: 10;
         }
         
         .tab:hover {
@@ -317,11 +322,12 @@
         #compass-view {
             display: none;
             width: 100%;
-            height: calc(100vh - 150px);
-            min-height: 450px;
+            height: calc(100vh - 200px); /* ヘッダー分の余裕を増やす */
+            min-height: 400px;
             background: linear-gradient(180deg, #87CEEB 0%, #E0F6FF 100%);
             position: relative;
             overflow: hidden;
+            margin-top: 10px; /* ヘッダーとの間隔を確保 */
         }
         
         #compass-container {
@@ -476,7 +482,7 @@
         
         #heading-display {
             position: absolute;
-            top: 15px;
+            top: 60px; /* タブエリアから十分離す */
             left: 50%;
             transform: translateX(-50%);
             background: rgba(255, 255, 255, 0.9);
@@ -487,11 +493,12 @@
             color: #2d3748;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
             z-index: 100;
+            pointer-events: none; /* クリックを透過させる */
         }
         
         @media (max-width: 768px) {
             #heading-display {
-                top: 10px;
+                top: 50px; /* モバイルでもタブから離す */
                 font-size: 18px;
                 padding: 8px 16px;
             }
@@ -2086,23 +2093,50 @@
         
         // イベントリスナーの設定
         function setupEventListeners() {
-            // タブのイベントリスナー（シンプル版）
+            debugLog('イベントリスナーの設定開始');
+            
+            // タブのイベントリスナー（デバッグ強化版）
             const tabMap = document.getElementById('tab-map');
             const tabCompass = document.getElementById('tab-compass');
             
-            if (tabMap) {
-                tabMap.addEventListener('click', function() {
-                    debugLog('マップタブがクリックされました');
-                    switchTab('map', tabMap);
-                });
+            // 要素が存在するか確認
+            if (!tabMap) {
+                debugLog('エラー: マップタブ要素が見つかりません');
+                return;
+            }
+            if (!tabCompass) {
+                debugLog('エラー: コンパスタブ要素が見つかりません');
+                return;
             }
             
-            if (tabCompass) {
-                tabCompass.addEventListener('click', function() {
-                    debugLog('コンパスタブがクリックされました');
-                    switchTab('compass', tabCompass);
-                });
+            debugLog('タブ要素を発見しました');
+            
+            // ポインターイベントを使用（より汎用的）
+            function handleMapTab(e) {
+                e.stopPropagation();
+                e.preventDefault();
+                debugLog('マップタブイベント発火');
+                switchTab('map', tabMap);
             }
+            
+            function handleCompassTab(e) {
+                e.stopPropagation();
+                e.preventDefault();
+                debugLog('コンパスタブイベント発火');
+                switchTab('compass', tabCompass);
+            }
+            
+            // 複数のイベントタイプを登録（最も確実な方法）
+            ['pointerup', 'click', 'touchend'].forEach(eventType => {
+                tabMap.addEventListener(eventType, handleMapTab, { passive: false, capture: true });
+                tabCompass.addEventListener(eventType, handleCompassTab, { passive: false, capture: true });
+                debugLog(`${eventType}イベントを登録しました`);
+            });
+            
+            // タブの状態を確認
+            debugLog(`マップタブのpointer-events: ${window.getComputedStyle(tabMap).pointerEvents}`);
+            debugLog(`コンパスタブのpointer-events: ${window.getComputedStyle(tabCompass).pointerEvents}`);
+        }
             
             // その他のボタンのイベントリスナー
             const getLocationBtn = document.getElementById('get-location-btn');
