@@ -51,6 +51,7 @@ let completedCheckpoints = new Set();
 let photos = [];
 let startTime = Date.now();
 let remainingTime = 120 * 60; // sec
+let timerInterval = null;
 let isOnline = navigator.onLine;
 let trackingEnabled = false;
 let trackingInterval = null;
@@ -59,16 +60,18 @@ let trackPolyline = null;
 let currentView = 'map';
 let compassContainerSize = 400;
 let currentHeading = 0;
+let rotationTotal = 0; // コンパス回転用の累積角度
 let ar = {
   stream: null,
   ctx: null,
   canvas: null,
   video: null,
-  fovH: 60 * Math.PI/180, // approx
+  fovH: 60 * Math.PI/180,
   fovV: 40 * Math.PI/180,
   range: 1000,
   timerId: null,
   secondsLeft: 300,
+  selectedCameraId: null, // 選択されたカメラID
 };
 
 const STORAGE_KEY = 'rogaining_data';
@@ -123,10 +126,8 @@ function initMap(){
     attribution: '&copy; OpenStreetMap'
   });
   tile.addTo(map);
-  // Initial view
   map.setView([37.20329853, 139.77424063], 14);
 
-  // Add checkpoint markers
   checkpoints.forEach(cp => {
     L.marker([cp.lat, cp.lng]).addTo(map).bindPopup(`${cp.name} (${cp.points}点)`);
   });
@@ -139,6 +140,7 @@ function saveToLocalStorage(){
     photos: photos.map(p => ({ timestamp:p.timestamp, position:p.position, dataUrl:p.dataUrl })),
     currentPosition, remainingTime, startTime,
     trackPoints, trackingEnabled,
+    selectedCameraId: ar.selectedCameraId,
     lastSaved: new Date().toISOString()
   };
   try{
@@ -160,6 +162,7 @@ function loadFromLocalStorage(){
     trackPoints = data.trackPoints || [];
     trackingEnabled = !!data.trackingEnabled;
     photos = data.photos || [];
+    ar.selectedCameraId = data.selectedCameraId || null;
     debugLog('LocalStorageから復元');
     return true;
   }catch(e){
@@ -168,7 +171,7 @@ function loadFromLocalStorage(){
   }
 }
 function clearLocalStorage(){
-  if (confirm('保存されているデータをすべて削除しますか？')){
+  if (confirm('保存されているデータをすべて削除しますか?')){
     localStorage.removeItem(STORAGE_KEY);
     location.reload();
   }
@@ -307,11 +310,11 @@ function checkNearby(){
     const d = distance(currentPosition.lat,currentPosition.lng,cp.lat,cp.lng);
     if (d <= threshold){
       completedCheckpoints.add(cp.id); found=true;
-      debugLog(`✓ チェックポイント「${cp.name}」クリア（+${cp.points}点）`);
-      alert(`🎉 チェックポイント「${cp.name}」をクリア！\n+${cp.points}点`);
+      debugLog(`✓ チェックポイント「${cp.name}」クリア(+${cp.points}点)`);
+      alert(`🎉 チェックポイント「${cp.name}」をクリア!\n+${cp.points}点`);
     }
   });
-  if (!found){ alert('近くにチェックポイントがありません（100m以内に接近してください）'); }
+  if (!found){ alert('近くにチェックポイントがありません(100m以内に接近してください)'); }
   updateScore(); renderCheckpoints(); saveToLocalStorage();
 }
 function updateScore(){
@@ -355,8 +358,17 @@ function stopTracking(){
 function toggleTracking(){ trackingEnabled ? stopTracking() : startTracking(); }
 function updateTrackingButton(){
   const b = document.getElementById('tracking-button');
-  if (trackingEnabled){ b.textContent='⏸️ 軌跡記録を停止'; b.classList.remove('button-success'); b.classList.add('danger'); }
-  else { b.textContent='▶️ 軌跡記録を開始'; b.classList.remove('danger'); b.classList.add('button-success'); }
+  if (trackingEnabled){ 
+    b.textContent='⏸️ 軌跡記録を停止'; 
+    b.classList.remove('button-success'); 
+    b.classList.add('danger'); 
+  } else { 
+    b.textContent='▶️ 軌跡記録を開始'; 
+    b.classList.remove('danger'); 
+    b.classList.add('button-success'); 
+    // 停止時はオレンジ色にする
+    b.style.background = '#ed8936';
+  }
 }
 function updateTrackPolyline(){
   if (!map) return;
@@ -365,6 +377,26 @@ function updateTrackPolyline(){
     const latlngs = trackPoints.map(p=>[p.lat,p.lng]);
     trackPolyline = L.polyline(latlngs,{ color:'#667eea',weight:3,opacity:.7 }).addTo(map);
   }
+}
+
+/* ======== Timer ======== */
+function startTimer(){
+  const update = ()=>{
+    const h = Math.floor(remainingTime/3600);
+    const m = Math.floor((remainingTime%3600)/60);
+    const s = remainingTime%60;
+    document.getElementById('timer').textContent = `残り時間: ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    if (remainingTime<=0){
+      clearInterval(timerInterval);
+      alert('制限時間終了!');
+      debugLog('競技終了');
+      saveToLocalStorage();
+    }
+    remainingTime--;
+    if (remainingTime%30===0) saveToLocalStorage();
+  };
+  update();
+  timerInterval = setInterval(update, 1000);
 }
 
 /* ======== Compass ======== */
@@ -399,8 +431,7 @@ function drawCompassTicks(){
 }
 function setHeading(deg){
   currentHeading = (deg+360)%360;
-  document.getElementById('compass-needle').style.transform = `translate(-50%,-50%) rotate(${currentHeading}deg)`;
-  document.getElementById('heading-display').textContent = `方位: ${currentHeading.toFixed(0)}°`;
+  updateCompassDisplay();
 }
 
 /* ======== Device orientation ======== */
@@ -409,11 +440,10 @@ function startOrientation(){
     window.addEventListener('deviceorientation', (e)=>{
       const alpha = e.webkitCompassHeading != null ? e.webkitCompassHeading : e.alpha;
       if (alpha == null) return;
-      const heading = e.webkitCompassHeading != null ? alpha : 360 - alpha; // iOS vs others
+      const heading = e.webkitCompassHeading != null ? alpha : 360 - alpha;
       setHeading(heading);
     });
   };
-  // iOS permission
   if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
     DeviceOrientationEvent.requestPermission().then(state=>{
       if (state==='granted'){ start(); }
@@ -422,6 +452,117 @@ function startOrientation(){
   } else {
     start();
   }
+}
+
+/* ======== Compass display update ======== */
+function updateCompassDisplay(){
+  const compassCircle = document.getElementById('compass-circle');
+  const headingDisplay = document.getElementById('heading-display');
+  
+  if (compassCircle){
+    let normalizedHeading = currentHeading % 360;
+    if (normalizedHeading < 0) normalizedHeading += 360;
+    let currentRotation = rotationTotal % 360;
+    if (currentRotation < 0) currentRotation += 360;
+    let diff = normalizedHeading - currentRotation;
+    if (diff > 180) diff -= 360;
+    else if (diff < -180) diff += 360;
+    rotationTotal += diff;
+    compassCircle.style.transform = `rotate(${rotationTotal}deg)`;
+  }
+  
+  if (headingDisplay){
+    headingDisplay.textContent = `方位: ${Math.round(currentHeading)}°`;
+  }
+  
+  updateCheckpointMarkers();
+}
+
+/* ======== Checkpoint markers on compass ======== */
+function updateCheckpointMarkers(){
+  if (!currentPosition) return;
+  const markersContainer = document.getElementById('checkpoint-markers');
+  if (!markersContainer) return;
+  markersContainer.innerHTML = '';
+  
+  let distances = [];
+  checkpoints.forEach(cp => {
+    if (completedCheckpoints.has(cp.id)) return;
+    const d = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    distances.push(d);
+  });
+  
+  if (distances.length === 0) return;
+  
+  const minDistance = Math.min(...distances);
+  const maxDistance = Math.max(...distances);
+  const centerPoint = compassContainerSize / 2;
+  const radius = centerPoint * 0.85;
+  
+  checkpoints.forEach(cp => {
+    if (completedCheckpoints.has(cp.id)) return;
+    const d = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    const color = getDistanceColor(d, minDistance, maxDistance);
+    const b = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    const relativeBearing = (b - currentHeading + 360) % 360;
+    
+    const marker = document.createElement('div');
+    marker.className = 'checkpoint-marker';
+    marker.textContent = cp.points;
+    marker.style.background = color;
+    
+    const angle = (relativeBearing - 90) * Math.PI / 180;
+    const x = centerPoint + radius * Math.cos(angle);
+    const y = centerPoint + radius * Math.sin(angle);
+    
+    marker.style.left = x + 'px';
+    marker.style.top = y + 'px';
+    marker.style.transform = `rotate(${-rotationTotal}deg)`;
+    
+    marker.title = `${cp.name}: ${Math.round(d)}m`;
+    markersContainer.appendChild(marker);
+  });
+  
+  updateDistanceBar(minDistance, maxDistance);
+}
+
+/* ======== Distance bar ======== */
+function updateDistanceBar(minDist, maxDist){
+  if (!currentPosition) return;
+  const bar = document.getElementById('distance-bar');
+  const maxLabel = document.getElementById('max-distance-label');
+  
+  if (!bar) return;
+  bar.innerHTML = '';
+  
+  if (maxLabel){
+    maxLabel.textContent = `${Math.round(maxDist)}m`;
+  }
+  
+  checkpoints.forEach(cp => {
+    if (completedCheckpoints.has(cp.id)) return;
+    const d = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    const color = getDistanceColor(d, minDist, maxDist);
+    const position = maxDist > minDist ? ((d - minDist) / (maxDist - minDist)) * 100 : 50;
+    
+    const marker = document.createElement('div');
+    marker.className = 'distance-marker';
+    if (completedCheckpoints.has(cp.id)) marker.classList.add('completed');
+    marker.textContent = cp.points;
+    marker.style.background = color;
+    marker.style.left = `${position}%`;
+    marker.title = `${cp.name}: ${Math.round(d)}m`;
+    bar.appendChild(marker);
+  });
+}
+
+function getDistanceColor(distance, minDist, maxDist){
+  if (maxDist === minDist) return 'hsl(120, 80%, 50%)';
+  const normalized = (distance - minDist) / (maxDist - minDist);
+  let hue;
+  if (normalized <= 0.5) hue = 240 - (120 * normalized * 2);
+  else hue = 120 - (120 * (normalized - 0.5) * 2);
+  return `hsl(${hue}, 80%, 50%)`;
 }
 
 /* ======== Tabs ======== */
@@ -433,12 +574,68 @@ function switchView(view){
   for (const b of document.querySelectorAll('#tabs .tab')){
     b.classList.toggle('active', b.dataset.view===view);
   }
-  if (view==='compass'){ updateCompassContainerSize(); }
+  if (view==='compass'){ 
+    updateCompassContainerSize(); 
+    setTimeout(updateCompassDisplay, 100);
+  }
   if (view==='ar'){ startAR(); } else { stopAR(); }
 }
 document.getElementById('tab-map')?.addEventListener('click', ()=>switchView('map'));
 document.getElementById('tab-compass')?.addEventListener('click', ()=>switchView('compass'));
 document.getElementById('tab-ar')?.addEventListener('click', ()=>switchView('ar'));
+
+/* ======== Camera selection ======== */
+async function getCameraDevices(){
+  try{
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter(d => d.kind === 'videoinput');
+  }catch(e){
+    debugLog('カメラデバイス取得エラー: ' + e.message);
+    return [];
+  }
+}
+
+async function showCameraSelector(){
+  const cameras = await getCameraDevices();
+  if (cameras.length <= 1) return null;
+  
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:10000;display:flex;align-items:center;justify-content:center;';
+  
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background:#fff;padding:20px;border-radius:12px;max-width:400px;width:90%;';
+  
+  const title = document.createElement('h3');
+  title.textContent = 'カメラを選択';
+  title.style.marginBottom = '15px';
+  dialog.appendChild(title);
+  
+  const list = document.createElement('div');
+  cameras.forEach((cam, idx) => {
+    const btn = document.createElement('button');
+    btn.textContent = cam.label || `カメラ ${idx+1}`;
+    btn.style.cssText = 'display:block;width:100%;padding:12px;margin:8px 0;background:#667eea;color:#fff;border:none;border-radius:8px;cursor:pointer;';
+    btn.onclick = ()=>{
+      ar.selectedCameraId = cam.deviceId;
+      saveToLocalStorage();
+      document.body.removeChild(modal);
+      startAR();
+    };
+    list.appendChild(btn);
+  });
+  dialog.appendChild(list);
+  
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'キャンセル';
+  cancelBtn.style.cssText = 'display:block;width:100%;padding:12px;margin:8px 0;background:#cbd5e0;color:#2d3748;border:none;border-radius:8px;cursor:pointer;';
+  cancelBtn.onclick = ()=>document.body.removeChild(modal);
+  dialog.appendChild(cancelBtn);
+  
+  modal.appendChild(dialog);
+  document.body.appendChild(modal);
+  
+  return new Promise(resolve => {});
+}
 
 /* ======== AR (camera + overlay) ======== */
 async function startAR(){
@@ -446,8 +643,16 @@ async function startAR(){
   const canvas = document.getElementById('ar-canvas');
   const ctx = canvas.getContext('2d');
   ar.video = video; ar.canvas = canvas; ar.ctx = ctx;
+  
   try{
-    ar.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio:false });
+    const constraints = { 
+      video: ar.selectedCameraId 
+        ? { deviceId: { exact: ar.selectedCameraId } }
+        : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, 
+      audio: false 
+    };
+    
+    ar.stream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = ar.stream;
     await video.play();
     resizeARCanvas();
@@ -457,41 +662,49 @@ async function startAR(){
     debugLog('📷 カメラ開始 (AR)');
   }catch(e){
     debugLog('カメラ起動に失敗: ' + e.message);
-    alert('カメラの使用許可が必要です');
-    switchView('compass');
+    // カメラ選択モーダルを表示
+    const cameras = await getCameraDevices();
+    if (cameras.length > 1){
+      await showCameraSelector();
+    } else {
+      alert('カメラの使用許可が必要です');
+      switchView('compass');
+    }
   }
 }
+
 function stopAR(){
   if (ar.stream){ ar.stream.getTracks().forEach(t=>t.stop()); ar.stream=null; }
   if (ar.timerId){ clearInterval(ar.timerId); ar.timerId=null; }
 }
+
 function resizeARCanvas(){
   const rect = document.getElementById('ar-view').getBoundingClientRect();
   ar.canvas.width = rect.width; ar.canvas.height = rect.height;
 }
-window.addEventListener('resize', ()=>{ updateCompassContainerSize(); if(currentView==='ar') resizeARCanvas(); });
+
+window.addEventListener('resize', ()=>{ 
+  updateCompassContainerSize(); 
+  if(currentView==='ar') resizeARCanvas(); 
+});
 
 function arLoop(){
   if (currentView!=='ar') return;
-  // draw simple markers
   const ctx = ar.ctx;
   const w = ar.canvas.width, h = ar.canvas.height;
   ctx.clearRect(0,0,w,h);
 
   if (!currentPosition){ requestAnimationFrame(arLoop); return; }
 
-  // heading strip
   const strip = document.getElementById('heading-strip');
   strip.style.backgroundPositionX = `-${currentHeading*2}px`;
 
   checkpoints.forEach(cp => {
     const d = distance(currentPosition.lat,currentPosition.lng,cp.lat,cp.lng);
     if (d > ar.range) return;
-    const b = bearing(currentPosition.lat,currentPosition.lng, cp.lat, cp.lng); // 0..360
-    let rel = ((b - currentHeading + 540) % 360) - 180; // -180..180
-    // project to screen
+    const b = bearing(currentPosition.lat,currentPosition.lng, cp.lat, cp.lng);
+    let rel = ((b - currentHeading + 540) % 360) - 180;
     const x = w/2 + (rel * (Math.PI/180)) / ar.fovH * w;
-    // elevation
     const elevDiff = (cp.elevation??0) - (currentPosition.elevation??0);
     const horiz = Math.max(1, d);
     const elevAngle = Math.atan2(elevDiff, horiz);
@@ -515,7 +728,6 @@ function arLoop(){
   requestAnimationFrame(arLoop);
 }
 
-/* Range buttons */
 for (const btn of document.querySelectorAll('.range-btn')){
   btn.addEventListener('click', ()=>{
     for (const b of document.querySelectorAll('.range-btn')) b.classList.remove('active');
@@ -525,7 +737,6 @@ for (const btn of document.querySelectorAll('.range-btn')){
   });
 }
 
-/* 5-minute auto timeout */
 function startARTimer(){
   ar.secondsLeft = 300;
   document.getElementById('ar-remaining').textContent = '05:00';
@@ -537,11 +748,21 @@ function startARTimer(){
     document.getElementById('ar-remaining').textContent = `${m}:${s}`;
     if (ar.secondsLeft<=0){
       clearInterval(ar.timerId); ar.timerId=null;
-      alert('ARモードを終了します（5分経過）');
+      alert('ARモードを終了します(5分経過)');
       switchView('compass');
     }
   }, 1000);
 }
+
+/* ======== Camera selector button ======== */
+const cameraSelectorBtn = document.createElement('button');
+cameraSelectorBtn.textContent = '📹';
+cameraSelectorBtn.style.cssText = 'position:absolute;top:10px;right:10px;background:rgba(0,0,0,.5);color:#fff;border:none;padding:10px 15px;border-radius:8px;cursor:pointer;z-index:1000;';
+cameraSelectorBtn.onclick = async ()=>{
+  stopAR();
+  await showCameraSelector();
+};
+document.getElementById('ar-view')?.appendChild(cameraSelectorBtn);
 
 /* ======== Events ======== */
 document.getElementById('get-location-btn')?.addEventListener('click', getCurrentLocation);
@@ -562,5 +783,6 @@ document.getElementById('clear-button')?.addEventListener('click', clearLocalSto
   updateTrackingButton();
   updateCompassContainerSize();
   startOrientation();
+  startTimer();
   document.getElementById('max-distance-label').textContent = '1km';
 })();
