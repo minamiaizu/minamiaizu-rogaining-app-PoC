@@ -1,0 +1,1 @@
+# minamiaizu-rogaining-app-PoC
