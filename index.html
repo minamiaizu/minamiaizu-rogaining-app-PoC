@@ -2095,47 +2095,29 @@
         function setupEventListeners() {
             debugLog('イベントリスナーの設定開始');
             
-            // タブのイベントリスナー（デバッグ強化版）
+            // タブのイベントリスナー
             const tabMap = document.getElementById('tab-map');
             const tabCompass = document.getElementById('tab-compass');
             
-            // 要素が存在するか確認
-            if (!tabMap) {
-                debugLog('エラー: マップタブ要素が見つかりません');
-                return;
-            }
-            if (!tabCompass) {
-                debugLog('エラー: コンパスタブ要素が見つかりません');
+            if (!tabMap || !tabCompass) {
+                debugLog('エラー: タブ要素が見つかりません');
                 return;
             }
             
-            debugLog('タブ要素を発見しました');
-            
-            // ポインターイベントを使用（より汎用的）
-            function handleMapTab(e) {
+            // pointerupイベントを使用（iOS PWAで最も信頼性が高い）
+            tabMap.addEventListener('pointerup', function(e) {
                 e.stopPropagation();
-                e.preventDefault();
-                debugLog('マップタブイベント発火');
+                debugLog('マップタブがタップされました');
                 switchTab('map', tabMap);
-            }
-            
-            function handleCompassTab(e) {
-                e.stopPropagation();
-                e.preventDefault();
-                debugLog('コンパスタブイベント発火');
-                switchTab('compass', tabCompass);
-            }
-            
-            // 複数のイベントタイプを登録（最も確実な方法）
-            ['pointerup', 'click', 'touchend'].forEach(eventType => {
-                tabMap.addEventListener(eventType, handleMapTab, { passive: false, capture: true });
-                tabCompass.addEventListener(eventType, handleCompassTab, { passive: false, capture: true });
-                debugLog(`${eventType}イベントを登録しました`);
             });
             
-            // タブの状態を確認
-            debugLog(`マップタブのpointer-events: ${window.getComputedStyle(tabMap).pointerEvents}`);
-            debugLog(`コンパスタブのpointer-events: ${window.getComputedStyle(tabCompass).pointerEvents}`);
+            tabCompass.addEventListener('pointerup', function(e) {
+                e.stopPropagation();
+                debugLog('コンパスタブがタップされました');
+                switchTab('compass', tabCompass);
+            });
+            
+            debugLog('タブイベントリスナーを設定しました');
         }
             
             // その他のボタンのイベントリスナー
