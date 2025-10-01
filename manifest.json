@@ -2,7 +2,7 @@
   "name": "ロゲイニング PoC",
   "short_name": "ロゲイニング",
   "description": "オフライン対応のロゲイニング競技支援アプリ",
-  "start_url": "/rogaining-poc.html",
+  "start_url": "/index.html",
   "display": "standalone",
   "background_color": "#667eea",
   "theme_color": "#667eea",
