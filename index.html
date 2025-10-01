@@ -2099,26 +2099,24 @@
             const tabMap = document.getElementById('tab-map');
             const tabCompass = document.getElementById('tab-compass');
             
-            if (!tabMap || !tabCompass) {
-                debugLog('エラー: タブ要素が見つかりません');
-                return;
+            if (tabMap && tabCompass) {
+                // pointerupイベントを使用（iOS PWAで最も信頼性が高い）
+                tabMap.addEventListener('pointerup', function(e) {
+                    e.stopPropagation();
+                    debugLog('マップタブがタップされました');
+                    switchTab('map', tabMap);
+                });
+                
+                tabCompass.addEventListener('pointerup', function(e) {
+                    e.stopPropagation();
+                    debugLog('コンパスタブがタップされました');
+                    switchTab('compass', tabCompass);
+                });
+                
+                debugLog('タブイベントリスナーを設定しました');
+            } else {
+                debugLog('警告: タブ要素が見つかりません');
             }
-            
-            // pointerupイベントを使用（iOS PWAで最も信頼性が高い）
-            tabMap.addEventListener('pointerup', function(e) {
-                e.stopPropagation();
-                debugLog('マップタブがタップされました');
-                switchTab('map', tabMap);
-            });
-            
-            tabCompass.addEventListener('pointerup', function(e) {
-                e.stopPropagation();
-                debugLog('コンパスタブがタップされました');
-                switchTab('compass', tabCompass);
-            });
-            
-            debugLog('タブイベントリスナーを設定しました');
-        }
             
             // その他のボタンのイベントリスナー
             const getLocationBtn = document.getElementById('get-location-btn');
