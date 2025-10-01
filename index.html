@@ -295,10 +295,20 @@
             cursor: pointer;
             font-size: 14px;
             transition: all 0.3s;
+            /* iOS タッチイベント最適化 */
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
         
         .tab:hover {
             background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .tab:active {
+            background: rgba(255, 255, 255, 0.4);
+            transform: scale(0.98);
         }
         
         .tab.active {
@@ -710,8 +720,8 @@
     <div id="header">
         <h1>🏃 ロゲイニング PoC</h1>
         <div id="tabs">
-            <div class="tab active" onclick="switchTab('map')">🗺 マップ</div>
-            <div class="tab" id="compass-tab" onclick="switchTab('compass')" style="display: none;">🧭 コンパス</div>
+            <div class="tab active" id="tab-map" data-view="map">🗺 マップ</div>
+            <div class="tab" id="tab-compass" data-view="compass" style="display: none;">🧭 コンパス</div>
         </div>
         <div id="status">
             <span id="timer">残り時間: 02:00:00</span>
@@ -752,20 +762,20 @@
     </div>
     
     <div id="controls">
-        <button class="button button-primary" onclick="getCurrentLocation()">
+        <button class="button button-primary" id="get-location-btn">
             📍 現在地を取得
         </button>
-        <button class="button button-primary" onclick="document.getElementById('photo-input').click()">
+        <button class="button button-primary" id="photo-btn">
             📷 写真を撮影
         </button>
-        <input type="file" id="photo-input" accept="image/*" capture="environment" onchange="handlePhoto(event)">
-        <button class="button button-success" onclick="checkNearbyCheckpoints()" id="check-button" disabled>
+        <input type="file" id="photo-input" accept="image/*" capture="environment">
+        <button class="button button-success" id="check-button" disabled>
             ✓ チェックポイント確認
         </button>
-        <button class="button" style="background: #48bb78; color: white; margin-top: 15px;" onclick="toggleTracking()" id="tracking-button">
+        <button class="button" style="background: #48bb78; color: white; margin-top: 15px;" id="tracking-button">
             ▶️ 軌跡記録を開始
         </button>
-        <button class="button" style="background: #e53e3e; color: white; margin-top: 20px;" onclick="clearLocalStorage()">
+        <button class="button" style="background: #e53e3e; color: white; margin-top: 20px;" id="clear-button">
             🗑️ データをリセット
         </button>
     </div>
@@ -819,7 +829,7 @@
     </div>
     
     <!-- 写真モーダル -->
-    <div id="photo-modal" class="photo-modal" onclick="closePhotoModal()">
+    <div id="photo-modal" class="photo-modal">
         <span class="photo-modal-close">&times;</span>
         <img id="modal-image" src="" alt="拡大表示">
     </div>
@@ -859,40 +869,6 @@
             debugLog('📱 PWAインストール可能');
         });
         
-        document.getElementById('install-button')?.addEventListener('click', async () => {
-            if (!deferredPrompt) return;
-            
-            deferredPrompt.prompt();
-            const { outcome } = await deferredPrompt.userChoice;
-            
-            debugLog(`PWAインストール結果: ${outcome}`);
-            
-            if (outcome === 'accepted') {
-                document.getElementById('install-banner').style.display = 'none';
-            }
-            
-            deferredPrompt = null;
-        });
-        
-        document.getElementById('close-install-banner')?.addEventListener('click', () => {
-            document.getElementById('install-banner').style.display = 'none';
-        });
-        
-        // PWA状態の確認
-        function checkPWAStatus() {
-            const pwaStatusEl = document.getElementById('pwa-status');
-            if (!pwaStatusEl) return;
-            
-            if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
-                pwaStatusEl.textContent = '✅ インストール済み';
-                pwaStatusEl.style.color = '#48bb78';
-                debugLog('PWAモードで実行中');
-            } else {
-                pwaStatusEl.textContent = 'ブラウザモード';
-                pwaStatusEl.style.color = '#718096';
-            }
-        }
-        
         // グローバル変数
         let map;
         let currentPositionMarker;
@@ -918,11 +894,9 @@
         let usingAbsoluteOrientation = false; // 絶対方位を使用しているか
         let compassContainerSize = 400; // コンパスコンテナのサイズ（動的に更新）
         let resizeTimer = null; // リサイズイベントのデバウンス用タイマー
+        let tabSwitching = false; // タブ切り替え中フラグ
         
         // チェックポイントのサンプルデータ（福島県南会津町田島駅周辺）
-        // 会津田島駅から遠いほど高得点に設定（5点刻み）
-        // 駅(0m):10点, 郵便局(150m):15点, 役場(280m):20点, 祇園会館(300m):25点
-        // 丸山公園(850m):30点, 運動公園(1200m):35点, びわのかげ(1400m):40点, たじま(1500m):45点
         const sampleCheckpoints = [
             { id: 1, name: "会津田島駅", lat: 37.20329853, lng: 139.77424063, points: 10 },
             { id: 5, name: "田島郵便局", lat: 37.20304087405265, lng: 139.77286576693686, points: 15 },
@@ -937,6 +911,21 @@
         // LocalStorageのキー
         const STORAGE_KEY = 'rogaining_data';
         
+        // PWA状態の確認
+        function checkPWAStatus() {
+            const pwaStatusEl = document.getElementById('pwa-status');
+            if (!pwaStatusEl) return;
+            
+            if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+                pwaStatusEl.textContent = '✅ インストール済み';
+                pwaStatusEl.style.color = '#48bb78';
+                debugLog('PWAモードで実行中');
+            } else {
+                pwaStatusEl.textContent = 'ブラウザモード';
+                pwaStatusEl.style.color = '#718096';
+            }
+        }
+        
         // 写真を圧縮してBase64化
         function compressImage(file, maxWidth = 1280, quality = 0.6) {
             return new Promise((resolve, reject) => {
@@ -944,12 +933,10 @@
                 reader.onload = (e) => {
                     const img = new Image();
                     img.onload = () => {
-                        // Canvasでリサイズ
                         const canvas = document.createElement('canvas');
                         let width = img.width;
                         let height = img.height;
                         
-                        // 最大幅を超える場合はリサイズ
                         if (width > maxWidth) {
                             height = (height * maxWidth) / width;
                             width = maxWidth;
@@ -961,10 +948,7 @@
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
                         
-                        // JPEG圧縮
                         const compressed = canvas.toDataURL('image/jpeg', quality);
-                        
-                        // 圧縮後のサイズをログ
                         const sizeKB = (compressed.length * 0.75 / 1024).toFixed(1);
                         debugLog(`写真を圧縮しました: ${sizeKB}KB`);
                         
@@ -985,12 +969,12 @@
                 photos: photos.map(p => ({
                     timestamp: p.timestamp,
                     position: p.position,
-                    dataUrl: p.dataUrl // Base64データを保存
+                    dataUrl: p.dataUrl
                 })),
                 currentPosition: currentPosition,
                 remainingTime: remainingTime,
                 startTime: startTime,
-                trackPoints: trackPoints, // 軌跡データを保存
+                trackPoints: trackPoints,
                 trackingEnabled: trackingEnabled,
                 lastSaved: new Date().toISOString()
             };
@@ -1021,10 +1005,8 @@
                 currentPosition = data.currentPosition;
                 remainingTime = data.remainingTime || 120 * 60;
                 startTime = data.startTime || Date.now();
-                trackPoints = data.trackPoints || []; // 軌跡データを復元
+                trackPoints = data.trackPoints || [];
                 trackingEnabled = data.trackingEnabled !== undefined ? data.trackingEnabled : true;
-                
-                // 写真データを復元
                 photos = data.photos || [];
                 
                 debugLog('LocalStorageからデータを復元しました');
@@ -1086,109 +1068,6 @@
             }
         }
         
-        // 初期化
-        function init() {
-            debugLog('アプリケーション初期化開始');
-            
-            // LocalStorageからデータを復元
-            const restored = loadFromLocalStorage();
-            if (restored) {
-                debugLog('前回のセッションを復元しました');
-            }
-            
-            // オンライン/オフライン検知の設定
-            setupOnlineDetection();
-            
-            // PWA状態をチェック
-            checkPWAStatus();
-            
-            // 地図の初期化（南会津町田島駅を中心に）
-            map = L.map('map').setView([37.20329853, 139.77424063], 15);
-            
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap contributors'
-            }).addTo(map);
-            
-            debugLog('地図を初期化しました');
-            
-            // チェックポイントの設定
-            checkpoints = [...sampleCheckpoints];
-            renderCheckpoints();
-            
-            // チェックポイントをマップに表示
-            checkpoints.forEach(cp => {
-                const marker = L.marker([cp.lat, cp.lng], {
-                    icon: L.divIcon({
-                        className: 'custom-icon',
-                        html: `<div style="background: ${completedCheckpoints.has(cp.id) ? '#48bb78' : '#667eea'}; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">${cp.points}</div>`,
-                        iconSize: [30, 30]
-                    })
-                }).addTo(map);
-                
-                marker.bindPopup(`<strong>${cp.name}</strong><br>${cp.points}点${completedCheckpoints.has(cp.id) ? '<br>✅ クリア済み' : ''}`);
-            });
-            
-            // タイマー開始
-            startTimer(remainingTime);
-            
-            // 復元した位置情報があれば地図に表示
-            if (currentPosition) {
-                if (currentPositionMarker) {
-                    map.removeLayer(currentPositionMarker);
-                }
-                
-                currentPositionMarker = L.marker([currentPosition.lat, currentPosition.lng], {
-                    icon: L.divIcon({
-                        className: 'current-position-icon',
-                        html: '<div style="background: #48bb78; border: 4px solid white; border-radius: 50%; width: 20px; height: 20px; box-shadow: 0 0 10px rgba(72, 187, 120, 0.6);"></div>',
-                        iconSize: [20, 20]
-                    })
-                }).addTo(map);
-                
-                document.getElementById('gps-status').textContent = '取得済み（復元）';
-                document.getElementById('gps-accuracy').textContent = `±${currentPosition.accuracy.toFixed(1)}m`;
-                document.getElementById('check-button').disabled = false;
-            }
-            
-            // スコアを更新
-            updateScore();
-            
-            // 写真数を更新
-            document.getElementById('photo-count').textContent = `${photos.length}枚`;
-            
-            // 軌跡ポイント数を更新
-            document.getElementById('track-count').textContent = `${trackPoints.length}個`;
-            
-            // 写真ギャラリーを表示
-            renderPhotoGallery();
-            
-            // 軌跡を地図に表示
-            if (trackPoints.length > 0) {
-                updateTrackPolyline();
-                debugLog(`軌跡を復元しました: ${trackPoints.length}ポイント`);
-            }
-            
-            // 軌跡記録を開始（復元時の状態に応じて）
-            if (trackingEnabled) {
-                startTracking();
-            }
-            updateTrackingButton();
-            
-            // オンライン状態を表示
-            updateOnlineStatus();
-            
-            debugLog('チェックポイントを配置しました');
-            
-            // コンパス機能の初期化
-            initCompass();
-            
-            // コンパスコンテナのサイズを初期化
-            updateCompassContainerSize();
-            
-            // リサイズイベントリスナーを追加
-            window.addEventListener('resize', handleResize);
-        }
-        
         // リサイズハンドラ（デバウンス付き）
         function handleResize() {
             clearTimeout(resizeTimer);
@@ -1206,7 +1085,6 @@
             const container = document.getElementById('compass-container');
             if (container) {
                 compassContainerSize = container.offsetWidth;
-                // Canvasのサイズも更新
                 const canvas = document.getElementById('compass-ticks');
                 if (canvas) {
                     canvas.width = compassContainerSize;
@@ -1229,7 +1107,6 @@
             
             ctx.clearRect(0, 0, size, size);
             
-            // 度数ごとに目盛りを描画
             for (let i = 0; i < 360; i++) {
                 const angle = (i - 90) * Math.PI / 180;
                 
@@ -1238,27 +1115,23 @@
                 let tickColor;
                 
                 if (i % 90 === 0) {
-                    // 主要方位（N, E, S, W）
                     tickLength = 25;
                     tickWidth = 3;
                     tickColor = i === 0 ? '#c53030' : '#2d3748';
                 } else if (i % 45 === 0) {
-                    // 副次方位（NE, SE, SW, NW）
                     tickLength = 20;
                     tickWidth = 2;
                     tickColor = '#4a5568';
                 } else if (i % 15 === 0) {
-                    // 15度ごと
                     tickLength = 15;
                     tickWidth = 2;
                     tickColor = '#718096';
                 } else if (i % 5 === 0) {
-                    // 5度ごと
                     tickLength = 10;
                     tickWidth = 1;
                     tickColor = '#a0aec0';
                 } else {
-                    continue; // 1度ごとは省略
+                    continue;
                 }
                 
                 const startX = centerX + (radius - tickLength) * Math.cos(angle);
@@ -1297,7 +1170,6 @@
                     debugLog(`位置情報取得成功: ${currentPosition.lat.toFixed(6)}, ${currentPosition.lng.toFixed(6)}`);
                     debugLog(`GPS精度: ${currentPosition.accuracy.toFixed(1)}m`);
                     
-                    // 地図上に現在地を表示
                     if (currentPositionMarker) {
                         map.removeLayer(currentPositionMarker);
                     }
@@ -1310,7 +1182,6 @@
                         })
                     }).addTo(map);
                     
-                    // 精度円を表示
                     L.circle([currentPosition.lat, currentPosition.lng], {
                         radius: currentPosition.accuracy,
                         color: '#48bb78',
@@ -1321,15 +1192,11 @@
                     
                     map.setView([currentPosition.lat, currentPosition.lng], 15);
                     
-                    // UI更新
                     document.getElementById('gps-status').textContent = '取得済み';
                     document.getElementById('gps-accuracy').textContent = `±${currentPosition.accuracy.toFixed(1)}m`;
                     document.getElementById('check-button').disabled = false;
                     
-                    // LocalStorageに保存
                     saveToLocalStorage();
-                    
-                    // 近くのチェックポイントをチェック
                     highlightNearbyCheckpoints();
                 },
                 (error) => {
@@ -1364,10 +1231,8 @@
             debugLog(`写真を撮影しました: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`);
             
             try {
-                // 写真を圧縮
                 const compressedDataUrl = await compressImage(file, 1280, 0.6);
                 
-                // 写真データを保存
                 photos.push({
                     timestamp: new Date().toISOString(),
                     position: currentPosition ? {...currentPosition} : null,
@@ -1375,20 +1240,14 @@
                 });
                 
                 document.getElementById('photo-count').textContent = `${photos.length}枚`;
-                
-                // サムネイルを表示
                 renderPhotoGallery();
-                
-                // LocalStorageに保存
                 saveToLocalStorage();
-                
                 debugLog(`保存された写真数: ${photos.length}枚`);
             } catch (error) {
                 debugLog(`写真の処理に失敗: ${error.message}`);
                 alert('写真の処理に失敗しました');
             }
             
-            // inputをリセット（同じファイルを再度選択できるように）
             event.target.value = '';
         }
         
@@ -1423,7 +1282,7 @@
             }
             
             let foundCheckpoint = false;
-            const checkpointThreshold = 100; // 100m以内
+            const checkpointThreshold = 100;
             
             checkpoints.forEach(cp => {
                 if (completedCheckpoints.has(cp.id)) return;
@@ -1442,8 +1301,6 @@
                     
                     updateScore();
                     renderCheckpoints();
-                    
-                    // LocalStorageに保存
                     saveToLocalStorage();
                 }
             });
@@ -1503,12 +1360,11 @@
         
         // 軌跡記録を開始
         function startTracking() {
-            if (trackingInterval) return; // 既に開始済み
+            if (trackingInterval) return;
             
             debugLog('軌跡記録を開始しました');
             trackingEnabled = true;
             
-            // 位置情報取得処理を関数化
             const trackPosition = () => {
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
@@ -1522,14 +1378,12 @@
                         trackPoints.push(point);
                         debugLog(`軌跡記録: ${trackPoints.length}個目のポイント取得`);
                         
-                        // 現在位置を更新
                         currentPosition = {
                             lat: position.coords.latitude,
                             lng: position.coords.longitude,
                             accuracy: position.coords.accuracy
                         };
                         
-                        // 地図上の現在位置マーカーを更新
                         if (currentPositionMarker) {
                             map.removeLayer(currentPositionMarker);
                         }
@@ -1542,21 +1396,15 @@
                             })
                         }).addTo(map);
                         
-                        // GPS情報を更新
                         document.getElementById('gps-status').textContent = '取得済み';
                         document.getElementById('gps-accuracy').textContent = `±${currentPosition.accuracy.toFixed(1)}m`;
                         
-                        // 地図上の軌跡を更新
                         updateTrackPolyline();
-                        
-                        // チェックポイントまでの距離表示を更新
                         renderCheckpoints();
                         highlightNearbyCheckpoints();
                         
-                        // ポイント数を表示更新
                         document.getElementById('track-count').textContent = `${trackPoints.length}個`;
                         
-                        // LocalStorageに保存（5分ごと）
                         if (trackPoints.length % 5 === 0) {
                             saveToLocalStorage();
                         }
@@ -1565,22 +1413,20 @@
                         debugLog(`軌跡記録エラー: ${error.message}`);
                     },
                     {
-                        enableHighAccuracy: false, // バッテリー節約のため精度を下げる
+                        enableHighAccuracy: false,
                         timeout: 10000,
                         maximumAge: 0
                     }
                 );
             };
             
-            // 開始時に即座に1回取得
             debugLog('初回位置情報を取得中...');
             trackPosition();
             
-            // 60秒ごとに位置情報を取得
             trackingInterval = setInterval(() => {
                 if (!trackingEnabled) return;
                 trackPosition();
-            }, 60000); // 60秒間隔
+            }, 60000);
             
             updateTrackingButton();
         }
@@ -1596,8 +1442,6 @@
             debugLog('軌跡記録を停止しました');
             saveToLocalStorage();
             updateTrackingButton();
-            
-            // 距離表示に「(更新停止中)」を即座に表示
             renderCheckpoints();
         }
         
@@ -1628,12 +1472,10 @@
         function updateTrackPolyline() {
             if (!map) return;
             
-            // 既存の軌跡線を削除
             if (trackPolyline) {
                 map.removeLayer(trackPolyline);
             }
             
-            // 軌跡ポイントが2つ以上ある場合のみ線を描画
             if (trackPoints.length >= 2) {
                 const latLngs = trackPoints.map(p => [p.lat, p.lng]);
                 trackPolyline = L.polyline(latLngs, {
@@ -1644,9 +1486,9 @@
             }
         }
         
-        // 2点間の距離を計算（Haversine formula）
+        // 2点間の距離を計算
         function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371e3; // 地球の半径（メートル）
+            const R = 6371e3;
             const φ1 = lat1 * Math.PI / 180;
             const φ2 = lat2 * Math.PI / 180;
             const Δφ = (lat2 - lat1) * Math.PI / 180;
@@ -1657,7 +1499,7 @@
                       Math.sin(Δλ/2) * Math.sin(Δλ/2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
             
-            return R * c; // メートル単位
+            return R * c;
         }
         
         // チェックポイントリスト表示
@@ -1731,7 +1573,6 @@
                 
                 remainingTime--;
                 
-                // 30秒ごとにLocalStorageに保存
                 if (remainingTime % 30 === 0) {
                     saveToLocalStorage();
                 }
@@ -1750,7 +1591,6 @@
             line.textContent = `[${time}] ${message}`;
             log.insertBefore(line, log.firstChild);
             
-            // 最新20件のみ保持
             while (log.children.length > 20) {
                 log.removeChild(log.lastChild);
             }
@@ -1758,20 +1598,16 @@
         
         // コンパス機能の初期化
         function initCompass() {
-            // DeviceOrientationEventのサポート確認
             if (window.DeviceOrientationEvent) {
                 debugLog('コンパス機能をチェック中...');
                 
-                // iOSの場合は許可が必要
                 if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    // iOS 13+の場合、まだ許可を求めない（タブクリック時に許可を求める）
                     compassSupported = true;
-                    document.getElementById('compass-tab').style.display = 'block';
+                    document.getElementById('tab-compass').style.display = 'block';
                     debugLog('コンパス機能が利用可能です（iOS、許可が必要）');
                 } else {
-                    // Android等、許可不要の場合
                     compassSupported = true;
-                    document.getElementById('compass-tab').style.display = 'block';
+                    document.getElementById('tab-compass').style.display = 'block';
                     debugLog('コンパス機能が利用可能です');
                     startCompass();
                 }
@@ -1782,7 +1618,6 @@
         
         // コンパスの開始
         function startCompass() {
-            // 絶対方位イベント（磁気センサー使用）を優先的に試す
             if ('ondeviceorientationabsolute' in window) {
                 window.addEventListener('deviceorientationabsolute', handleAbsoluteOrientation);
                 usingAbsoluteOrientation = true;
@@ -1793,10 +1628,9 @@
             }
         }
         
-        // 絶対方位データの処理（magnetometerを使用）
+        // 絶対方位データの処理
         function handleAbsoluteOrientation(event) {
             if (event.alpha !== null) {
-                // 絶対方位イベントは常に磁北を基準とする
                 currentHeading = 360 - event.alpha;
                 compassCalibrated = true;
                 updateCompassDisplay();
@@ -1830,24 +1664,19 @@
             let heading = 0;
             
             if (event.webkitCompassHeading !== undefined) {
-                // iOS Safari - 磁気センサーを使用
                 heading = event.webkitCompassHeading;
                 compassCalibrated = true;
             } else if (event.alpha !== null) {
-                // Android Chrome等
                 if (event.absolute === true) {
-                    // 磁気センサーによる絶対方位
                     heading = 360 - event.alpha;
                     compassCalibrated = true;
                 } else if (event.absolute === false) {
-                    // 相対方位（磁気センサー未使用）
                     heading = 360 - event.alpha;
                     if (!compassCalibrated) {
                         debugLog('⚠️ 磁気センサーが使用されていません（相対方位モード）');
                         compassCalibrated = false;
                     }
                 } else {
-                    // absolute が undefined の場合（古いブラウザ）
                     heading = 360 - event.alpha;
                 }
             }
@@ -1856,50 +1685,42 @@
             updateCompassDisplay();
         }
         
-        // コンパス表示の更新（修正版）
+        // コンパス表示の更新
         function updateCompassDisplay() {
             const compassCircle = document.getElementById('compass-circle');
             const headingDisplay = document.getElementById('heading-display');
             
             if (compassCircle) {
-                // 現在の方位を正規化（0-360の範囲に収める）
                 let normalizedHeading = currentHeading % 360;
                 if (normalizedHeading < 0) normalizedHeading += 360;
                 
-                // 累積角度から現在の方位への最短経路を計算
                 let currentRotation = rotationTotal % 360;
                 if (currentRotation < 0) currentRotation += 360;
                 
                 let diff = normalizedHeading - currentRotation;
                 
-                // 最短経路を計算
                 if (diff > 180) {
                     diff -= 360;
                 } else if (diff < -180) {
                     diff += 360;
                 }
                 
-                // 累積角度を更新
                 rotationTotal += diff;
-                
-                // CSSトランスフォームを適用
                 compassCircle.style.transform = `rotate(${rotationTotal}deg)`;
             }
             
             if (headingDisplay) {
                 let displayText = `方位: ${Math.round(currentHeading)}°`;
                 
-                // 較正状態を表示
                 if (usingAbsoluteOrientation) {
-                    displayText += ' 🧭'; // 磁気センサー使用中
+                    displayText += ' 🧭';
                 } else if (compassCalibrated === false) {
-                    displayText += ' ⚠️'; // 相対方位モード
+                    displayText += ' ⚠️';
                 }
                 
                 headingDisplay.textContent = displayText;
             }
             
-            // チェックポイントマーカーを更新
             updateCheckpointMarkers();
         }
         
@@ -1910,10 +1731,8 @@
             const markersContainer = document.getElementById('checkpoint-markers');
             if (!markersContainer) return;
             
-            // 古いマーカーをすべて削除
             markersContainer.innerHTML = '';
             
-            // すべてのチェックポイントまでの距離を計算して、最大・最小を求める
             let distances = [];
             checkpoints.forEach(cp => {
                 if (completedCheckpoints.has(cp.id)) return;
@@ -1929,39 +1748,32 @@
             const minDistance = Math.min(...distances);
             const maxDistance = Math.max(...distances);
             
-            // コンパスコンテナのサイズを取得
             const centerPoint = compassContainerSize / 2;
-            const radius = centerPoint * 0.85; // 中心から85%の位置
+            const radius = centerPoint * 0.85;
             
             checkpoints.forEach(cp => {
-                if (completedCheckpoints.has(cp.id)) return; // クリア済みは表示しない
+                if (completedCheckpoints.has(cp.id)) return;
                 
-                // チェックポイントまでの距離を計算
                 const distance = calculateDistance(
                     currentPosition.lat, currentPosition.lng,
                     cp.lat, cp.lng
                 );
                 
-                // 距離に応じた色を計算（近い=緑、中間=黄、遠い=赤）
                 const color = getDistanceColor(distance, minDistance, maxDistance);
                 
-                // チェックポイントへの方位を計算
                 const bearing = calculateBearing(
                     currentPosition.lat, currentPosition.lng,
                     cp.lat, cp.lng
                 );
                 
-                // 現在の方位を考慮した相対角度
                 const relativeBearing = (bearing - currentHeading + 360) % 360;
                 
-                // マーカーを配置
                 const marker = document.createElement('div');
                 marker.className = 'checkpoint-marker';
                 marker.textContent = cp.points;
                 marker.style.background = color;
                 
-                // 円周上の位置を計算
-                const angle = (relativeBearing - 90) * Math.PI / 180; // -90度でN方向
+                const angle = (relativeBearing - 90) * Math.PI / 180;
                 const x = centerPoint + radius * Math.cos(angle);
                 const y = centerPoint + radius * Math.sin(angle);
                 
@@ -1969,7 +1781,6 @@
                 marker.style.top = y + 'px';
                 marker.style.transform = `rotate(${-rotationTotal}deg)`;
                 
-                // タップイベントを追加
                 marker.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const rect = marker.getBoundingClientRect();
@@ -1978,11 +1789,9 @@
                     showTooltip(`${cp.name}: ${Math.round(distance)}m`, tooltipX, tooltipY);
                 });
                 
-                // 正しいコンテナに追加
                 markersContainer.appendChild(marker);
             });
             
-            // 距離バーを更新
             updateDistanceBar(minDistance, maxDistance);
         }
         
@@ -1997,29 +1806,24 @@
             
             bar.innerHTML = '';
             
-            // 最大距離ラベルを更新
             if (maxLabel) {
                 maxLabel.textContent = `${Math.round(maxDist)}m`;
             }
             
-            // 各チェックポイントをバー上に配置
             checkpoints.forEach(cp => {
-                if (completedCheckpoints.has(cp.id)) return; // クリア済みは表示しない
+                if (completedCheckpoints.has(cp.id)) return;
                 
                 const distance = calculateDistance(
                     currentPosition.lat, currentPosition.lng,
                     cp.lat, cp.lng
                 );
                 
-                // 距離に応じた色を取得
                 const color = getDistanceColor(distance, minDist, maxDist);
                 
-                // バー上の位置を計算（0%〜100%）
                 const position = maxDist > minDist 
                     ? ((distance - minDist) / (maxDist - minDist)) * 100 
                     : 50;
                 
-                // マーカーを作成
                 const marker = document.createElement('div');
                 marker.className = 'distance-marker';
                 if (completedCheckpoints.has(cp.id)) {
@@ -2030,7 +1834,6 @@
                 marker.style.left = `${position}%`;
                 marker.title = `${cp.name}: ${Math.round(distance)}m`;
                 
-                // タップイベントを追加
                 marker.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const rect = marker.getBoundingClientRect();
@@ -2043,22 +1846,18 @@
             });
         }
         
-        // 距離に応じた色を計算（青方偏移・赤方偏移モチーフ）
+        // 距離に応じた色を計算
         function getDistanceColor(distance, minDist, maxDist) {
             if (maxDist === minDist) {
-                // すべて同じ距離の場合は中間色（緑）
                 return 'hsl(120, 80%, 50%)';
             }
             
-            // 0（近い）から1（遠い）に正規化
             const normalized = (distance - minDist) / (maxDist - minDist);
             
             let hue;
             if (normalized <= 0.5) {
-                // 前半: 青（240度）→ 緑（120度）
                 hue = 240 - (120 * normalized * 2);
             } else {
-                // 後半: 緑（120度）→ 赤（0度）
                 hue = 120 - (120 * (normalized - 0.5) * 2);
             }
             
@@ -2067,10 +1866,8 @@
         
         // カスタムツールチップの表示
         function showTooltip(text, x, y) {
-            // 既存のツールチップを削除
             hideTooltip();
             
-            // 新しいツールチップを作成
             const tooltip = document.createElement('div');
             tooltip.className = 'custom-tooltip';
             tooltip.textContent = text;
@@ -2080,7 +1877,6 @@
             document.body.appendChild(tooltip);
             activeTooltip = tooltip;
             
-            // 3秒後に自動的に非表示
             clearTimeout(tooltipTimeout);
             tooltipTimeout = setTimeout(hideTooltip, 3000);
         }
@@ -2094,7 +1890,7 @@
             clearTimeout(tooltipTimeout);
         }
         
-        // 2点間の方位を計算（北を0度とする）
+        // 2点間の方位を計算
         function calculateBearing(lat1, lon1, lat2, lon2) {
             const φ1 = lat1 * Math.PI / 180;
             const φ2 = lat2 * Math.PI / 180;
@@ -2108,51 +1904,289 @@
             return (θ * 180 / Math.PI + 360) % 360;
         }
         
-        // ツールチップを閉じるためのイベントリスナー
-        document.addEventListener('click', (e) => {
-            if (activeTooltip && !e.target.classList.contains('checkpoint-marker') && 
-                !e.target.classList.contains('distance-marker')) {
-                hideTooltip();
+        // タブの切り替え（修正版）
+        async function switchTab(view, targetTab) {
+            // 多重切り替え防止
+            if (tabSwitching) {
+                debugLog('タブ切り替え中です');
+                return;
             }
-        });
-        
-        // タブの切り替え
-        async function switchTab(view) {
-            // iOSでコンパスタブを初めてクリックした場合、許可を求める
-            if (view === 'compass' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                const hasListeners = window.ondeviceorientation !== null;
-                if (!hasListeners) {
-                    const granted = await requestCompassPermission();
-                    if (!granted) {
-                        return; // 許可されなかった場合は切り替えない
+            
+            tabSwitching = true;
+            debugLog(`タブ切り替え開始: ${currentView} → ${view}`);
+            
+            try {
+                // iOSでコンパスタブを初めてクリックした場合、許可を求める
+                if (view === 'compass' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    const hasListeners = window.ondeviceorientation !== null;
+                    if (!hasListeners) {
+                        const granted = await requestCompassPermission();
+                        if (!granted) {
+                            tabSwitching = false;
+                            return;
+                        }
                     }
                 }
+                
+                currentView = view;
+                
+                // タブのアクティブ状態を更新
+                document.querySelectorAll('.tab').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                
+                if (targetTab) {
+                    targetTab.classList.add('active');
+                }
+                
+                // ビューの切り替え
+                const mapDiv = document.getElementById('map');
+                const compassDiv = document.getElementById('compass-view');
+                
+                if (view === 'map') {
+                    mapDiv.style.display = 'block';
+                    compassDiv.style.display = 'none';
+                    debugLog('マップビューに切り替えました');
+                } else if (view === 'compass') {
+                    mapDiv.style.display = 'none';
+                    compassDiv.style.display = 'flex';
+                    updateCompassContainerSize();
+                    updateCompassDisplay();
+                    debugLog('コンパスビューに切り替えました');
+                }
+                
+            } catch (error) {
+                debugLog(`タブ切り替えエラー: ${error.message}`);
+            } finally {
+                tabSwitching = false;
+            }
+        }
+        
+        // 初期化
+        function init() {
+            debugLog('アプリケーション初期化開始');
+            
+            // LocalStorageからデータを復元
+            const restored = loadFromLocalStorage();
+            if (restored) {
+                debugLog('前回のセッションを復元しました');
             }
             
-            currentView = view;
+            // オンライン/オフライン検知の設定
+            setupOnlineDetection();
             
-            // タブのアクティブ状態を更新
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.classList.remove('active');
+            // PWA状態をチェック
+            checkPWAStatus();
+            
+            // 地図の初期化
+            map = L.map('map').setView([37.20329853, 139.77424063], 15);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            debugLog('地図を初期化しました');
+            
+            // チェックポイントの設定
+            checkpoints = [...sampleCheckpoints];
+            renderCheckpoints();
+            
+            // チェックポイントをマップに表示
+            checkpoints.forEach(cp => {
+                const marker = L.marker([cp.lat, cp.lng], {
+                    icon: L.divIcon({
+                        className: 'custom-icon',
+                        html: `<div style="background: ${completedCheckpoints.has(cp.id) ? '#48bb78' : '#667eea'}; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">${cp.points}</div>`,
+                        iconSize: [30, 30]
+                    })
+                }).addTo(map);
+                
+                marker.bindPopup(`<strong>${cp.name}</strong><br>${cp.points}点${completedCheckpoints.has(cp.id) ? '<br>✅ クリア済み' : ''}`);
             });
-            event.target.classList.add('active');
             
-            // ビューの切り替え
-            if (view === 'map') {
-                document.getElementById('map').style.display = 'block';
-                document.getElementById('compass-view').style.display = 'none';
-            } else if (view === 'compass') {
-                document.getElementById('map').style.display = 'none';
-                document.getElementById('compass-view').style.display = 'flex';
-                updateCompassContainerSize(); // コンパス表示時にサイズを再計算
-                updateCompassDisplay();
+            // タイマー開始
+            startTimer(remainingTime);
+            
+            // 復元した位置情報があれば地図に表示
+            if (currentPosition) {
+                if (currentPositionMarker) {
+                    map.removeLayer(currentPositionMarker);
+                }
+                
+                currentPositionMarker = L.marker([currentPosition.lat, currentPosition.lng], {
+                    icon: L.divIcon({
+                        className: 'current-position-icon',
+                        html: '<div style="background: #48bb78; border: 4px solid white; border-radius: 50%; width: 20px; height: 20px; box-shadow: 0 0 10px rgba(72, 187, 120, 0.6);"></div>',
+                        iconSize: [20, 20]
+                    })
+                }).addTo(map);
+                
+                document.getElementById('gps-status').textContent = '取得済み（復元）';
+                document.getElementById('gps-accuracy').textContent = `±${currentPosition.accuracy.toFixed(1)}m`;
+                document.getElementById('check-button').disabled = false;
             }
             
-            debugLog(`ビューを切り替えました: ${view}`);
+            // スコアを更新
+            updateScore();
+            
+            // 写真数を更新
+            document.getElementById('photo-count').textContent = `${photos.length}枚`;
+            
+            // 軌跡ポイント数を更新
+            document.getElementById('track-count').textContent = `${trackPoints.length}個`;
+            
+            // 写真ギャラリーを表示
+            renderPhotoGallery();
+            
+            // 軌跡を地図に表示
+            if (trackPoints.length > 0) {
+                updateTrackPolyline();
+                debugLog(`軌跡を復元しました: ${trackPoints.length}ポイント`);
+            }
+            
+            // 軌跡記録を開始
+            if (trackingEnabled) {
+                startTracking();
+            }
+            updateTrackingButton();
+            
+            // オンライン状態を表示
+            updateOnlineStatus();
+            
+            debugLog('チェックポイントを配置しました');
+            
+            // コンパス機能の初期化
+            initCompass();
+            
+            // コンパスコンテナのサイズを初期化
+            updateCompassContainerSize();
+            
+            // リサイズイベントリスナーを追加
+            window.addEventListener('resize', handleResize);
+            
+            // イベントリスナーの設定
+            setupEventListeners();
+        }
+        
+        // イベントリスナーの設定
+        function setupEventListeners() {
+            // タブのイベントリスナー（タッチイベントとクリックの両方に対応）
+            const tabMap = document.getElementById('tab-map');
+            const tabCompass = document.getElementById('tab-compass');
+            
+            if (tabMap) {
+                // タッチデバイス対応
+                tabMap.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    switchTab('map', tabMap);
+                }, { passive: false });
+                
+                // マウス対応
+                tabMap.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    switchTab('map', tabMap);
+                });
+            }
+            
+            if (tabCompass) {
+                // タッチデバイス対応
+                tabCompass.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    switchTab('compass', tabCompass);
+                }, { passive: false });
+                
+                // マウス対応
+                tabCompass.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    switchTab('compass', tabCompass);
+                });
+            }
+            
+            // その他のボタンのイベントリスナー
+            const getLocationBtn = document.getElementById('get-location-btn');
+            if (getLocationBtn) {
+                getLocationBtn.addEventListener('click', getCurrentLocation);
+            }
+            
+            const photoBtn = document.getElementById('photo-btn');
+            if (photoBtn) {
+                photoBtn.addEventListener('click', () => {
+                    document.getElementById('photo-input').click();
+                });
+            }
+            
+            const photoInput = document.getElementById('photo-input');
+            if (photoInput) {
+                photoInput.addEventListener('change', handlePhoto);
+            }
+            
+            const checkBtn = document.getElementById('check-button');
+            if (checkBtn) {
+                checkBtn.addEventListener('click', checkNearbyCheckpoints);
+            }
+            
+            const trackingBtn = document.getElementById('tracking-button');
+            if (trackingBtn) {
+                trackingBtn.addEventListener('click', toggleTracking);
+            }
+            
+            const clearBtn = document.getElementById('clear-button');
+            if (clearBtn) {
+                clearBtn.addEventListener('click', clearLocalStorage);
+            }
+            
+            // 写真モーダルの閉じるボタン
+            const modalClose = document.querySelector('.photo-modal-close');
+            if (modalClose) {
+                modalClose.addEventListener('click', closePhotoModal);
+            }
+            
+            const photoModal = document.getElementById('photo-modal');
+            if (photoModal) {
+                photoModal.addEventListener('click', (e) => {
+                    if (e.target === photoModal) {
+                        closePhotoModal();
+                    }
+                });
+            }
+            
+            // PWAインストールバナー
+            const installBtn = document.getElementById('install-button');
+            if (installBtn) {
+                installBtn.addEventListener('click', async () => {
+                    if (!deferredPrompt) return;
+                    
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    
+                    debugLog(`PWAインストール結果: ${outcome}`);
+                    
+                    if (outcome === 'accepted') {
+                        document.getElementById('install-banner').style.display = 'none';
+                    }
+                    
+                    deferredPrompt = null;
+                });
+            }
+            
+            const closeBannerBtn = document.getElementById('close-install-banner');
+            if (closeBannerBtn) {
+                closeBannerBtn.addEventListener('click', () => {
+                    document.getElementById('install-banner').style.display = 'none';
+                });
+            }
+            
+            // ツールチップ非表示用のクリックイベント
+            document.addEventListener('click', (e) => {
+                if (activeTooltip && !e.target.classList.contains('checkpoint-marker') && 
+                    !e.target.classList.contains('distance-marker')) {
+                    hideTooltip();
+                }
+            });
         }
         
         // ページ読み込み時に初期化
-        window.onload = init;
+        window.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
 </html>
