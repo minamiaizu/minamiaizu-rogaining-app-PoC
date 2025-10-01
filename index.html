@@ -297,9 +297,6 @@
             transition: all 0.3s;
             /* iOS タッチイベント最適化 */
             -webkit-tap-highlight-color: transparent;
-            -webkit-touch-callout: none;
-            -webkit-user-select: none;
-            user-select: none;
         }
         
         .tab:hover {
@@ -1153,6 +1150,13 @@
         function getCurrentLocation() {
             debugLog('位置情報取得を開始...');
             
+            // HTTPSチェック（localhost以外でHTTPの場合は警告）
+            if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+                alert('HTTPSでないため位置情報を取得できません。\nHTTPS接続でアクセスするか、PWAとしてインストールしてください。');
+                debugLog('エラー: HTTPS接続が必要です');
+                return;
+            }
+            
             if (!navigator.geolocation) {
                 alert('このブラウザは位置情報機能に対応していません');
                 debugLog('エラー: Geolocation API非対応');
@@ -1201,19 +1205,31 @@
                 },
                 (error) => {
                     let errorMessage = '';
+                    let debugMessage = '';
                     switch(error.code) {
                         case error.PERMISSION_DENIED:
-                            errorMessage = '位置情報の使用が拒否されました';
+                            errorMessage = '位置情報の使用が拒否されました。\nブラウザの設定で位置情報の使用を許可してください。';
+                            debugMessage = '位置情報の使用が拒否されました（PERMISSION_DENIED）';
+                            // HTTPSでない場合の追加情報
+                            if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+                                errorMessage += '\n\n※HTTPSでないため位置情報が使用できない可能性があります。';
+                                debugMessage += '（HTTP接続のため）';
+                            }
                             break;
                         case error.POSITION_UNAVAILABLE:
-                            errorMessage = '位置情報が取得できません';
+                            errorMessage = '位置情報が取得できません。\nGPS/位置サービスが有効になっているか確認してください。';
+                            debugMessage = '位置情報が利用不可（POSITION_UNAVAILABLE）';
                             break;
                         case error.TIMEOUT:
-                            errorMessage = '位置情報の取得がタイムアウトしました';
+                            errorMessage = '位置情報の取得がタイムアウトしました。\n電波状況の良い場所で再度お試しください。';
+                            debugMessage = '位置情報取得タイムアウト（TIMEOUT）';
                             break;
+                        default:
+                            errorMessage = '位置情報の取得に失敗しました。';
+                            debugMessage = `不明なエラー（code: ${error.code}）`;
                     }
                     alert(errorMessage);
-                    debugLog(`エラー: ${errorMessage}`);
+                    debugLog(`エラー: ${debugMessage}`);
                 },
                 {
                     enableHighAccuracy: true,
@@ -2070,35 +2086,30 @@
         
         // イベントリスナーの設定
         function setupEventListeners() {
-            // タブのイベントリスナー（タッチイベントとクリックの両方に対応）
+            // タブのイベントリスナー（クリックイベントで統一）
             const tabMap = document.getElementById('tab-map');
             const tabCompass = document.getElementById('tab-compass');
             
+            // クリック/タップの二重実行を防ぐためのフラグ
+            let tabEventProcessing = false;
+            
             if (tabMap) {
-                // タッチデバイス対応
-                tabMap.addEventListener('touchstart', (e) => {
-                    e.preventDefault();
-                    switchTab('map', tabMap);
-                }, { passive: false });
-                
-                // マウス対応
                 tabMap.addEventListener('click', (e) => {
-                    e.preventDefault();
+                    e.stopPropagation();
+                    if (tabEventProcessing) return;
+                    tabEventProcessing = true;
                     switchTab('map', tabMap);
+                    setTimeout(() => { tabEventProcessing = false; }, 300);
                 });
             }
             
             if (tabCompass) {
-                // タッチデバイス対応
-                tabCompass.addEventListener('touchstart', (e) => {
-                    e.preventDefault();
-                    switchTab('compass', tabCompass);
-                }, { passive: false });
-                
-                // マウス対応
                 tabCompass.addEventListener('click', (e) => {
-                    e.preventDefault();
+                    e.stopPropagation();
+                    if (tabEventProcessing) return;
+                    tabEventProcessing = true;
                     switchTab('compass', tabCompass);
+                    setTimeout(() => { tabEventProcessing = false; }, 300);
                 });
             }
             
