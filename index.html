@@ -1173,32 +1173,7 @@
             // コンパス機能の初期化
             initCompass();
             
-            // 角度を0-360の範囲に正規化
-        function normalizeAngle(angle) {
-            angle = angle % 360;
-            if (angle < 0) angle += 360;
-            return angle;
-        }
-        
-        // Canvasを動的にリサイズ
-        function resizeCompassCanvas() {
-            const canvas = document.getElementById('compass-ticks');
-            const compassContainer = document.getElementById('compass-container');
-            if (!canvas || !compassContainer) return;
-            
-            // 実際の表示サイズを取得
-            const rect = compassContainer.getBoundingClientRect();
-            const size = Math.floor(rect.width);
-            
-            // Canvas内部解像度を設定
-            canvas.width = size;
-            canvas.height = size;
-            
-            // 目盛りを再描画
-            drawCompassTicks();
-        }
-        
-                // コンパスの目盛りを描画
+            // コンパスの目盛りを描画
             drawCompassTicks();
         }
         
@@ -1208,13 +1183,6 @@
             if (!canvas) return;
             
             const ctx = canvas.getContext('2d');
-            
-            // Canvasのサイズが初期化されていない場合は500x500にする
-            if (canvas.width === 0 || canvas.height === 0) {
-                canvas.width = 500;
-                canvas.height = 500;
-            }
-            
             const centerX = canvas.width / 2;
             const centerY = canvas.height / 2;
             const radius = canvas.width / 2 - 20;
@@ -1854,26 +1822,23 @@
             const headingDisplay = document.getElementById('heading-display');
             
             if (compassCircle) {
-                // currentHeadingを0-360に正規化
-                currentHeading = normalizeAngle(currentHeading);
+                // 360度と0度の境界でスムーズに回転させるための処理
+                let targetHeading = currentHeading;
+                let diff = targetHeading - previousHeading;
                 
-                // 最短経路で回転するための差分計算
-                let diff = currentHeading - previousHeading;
-                
-                // 180度を超える場合は最短経路を選択
+                // 差分が180度以上の場合、最短経路で回転
                 if (diff > 180) {
                     diff -= 360;
                 } else if (diff < -180) {
                     diff += 360;
                 }
                 
-                // smoothHeadingを累積更新（360度を超えてもOK）
-                smoothHeading += diff;
+                // スムーズな角度を計算
+                smoothHeading = previousHeading + diff;
                 
-                // 次回計算用にpreviousHeadingを更新
-                previousHeading = currentHeading;
+                // 360度を超える/0度未満の場合の処理（CSSでは問題ないが、次回の計算のため正規化）
+                previousHeading = targetHeading;
                 
-                // CSS transformに累積角度を適用
                 compassCircle.style.transform = `rotate(${smoothHeading}deg)`;
             }
             
@@ -1920,10 +1885,7 @@
             
             // コンパスコンテナのサイズを取得
             const compassContainer = document.getElementById('compass-container');
-            if (!compassContainer) return;
-            
-            const rect = compassContainer.getBoundingClientRect();
-            const containerSize = rect.width;
+            const containerSize = compassContainer ? compassContainer.offsetWidth : 280;
             const centerPoint = containerSize / 2;
             const radius = centerPoint * 0.88; // 中心から88%の位置
             
@@ -2138,11 +2100,7 @@
             } else if (view === 'compass') {
                 document.getElementById('map').style.display = 'none';
                 document.getElementById('compass-view').style.display = 'flex';
-                // Canvasをリサイズしてから表示を更新
-                setTimeout(() => {
-                    resizeCompassCanvas();
-                    updateCompassDisplay();
-                }, 10);
+                updateCompassDisplay();
             }
             
             debugLog(`ビューを切り替えました: ${view}`);
