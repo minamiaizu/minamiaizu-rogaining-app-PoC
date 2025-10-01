@@ -1,0 +1,2090 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ロゲイニング PoC</title>
+    <!-- PWA メタタグ -->
+    <meta name="description" content="オフライン対応のロゲイニング競技支援アプリ">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ロゲイニング">
+    
+    <!-- マニフェスト -->
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- iOS用アイコン -->
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+        }
+        
+        #header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        #header h1 {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+        
+        #status {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        #map {
+            width: 100%;
+            height: 400px;
+        }
+        
+        #controls {
+            padding: 20px;
+            background: white;
+            margin: 15px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .button {
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .button-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .button-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .button-success {
+            background: #48bb78;
+            color: white;
+        }
+        
+        .button-success:hover {
+            background: #38a169;
+        }
+        
+        .button:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        #photo-input {
+            display: none;
+        }
+        
+        #info {
+            padding: 15px 20px;
+            background: white;
+            margin: 15px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .info-item:last-child {
+            border-bottom: none;
+        }
+        
+        .info-label {
+            font-weight: 600;
+            color: #4a5568;
+        }
+        
+        .info-value {
+            color: #667eea;
+            font-weight: 600;
+        }
+        
+        #checkpoint-list {
+            padding: 15px 20px;
+            background: white;
+            margin: 15px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .checkpoint-item {
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 8px;
+            background: #f7fafc;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .checkpoint-item.completed {
+            background: #c6f6d5;
+        }
+        
+        .checkpoint-item.near {
+            background: #fed7d7;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .checkpoint-name {
+            font-weight: 600;
+        }
+        
+        .checkpoint-points {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .checkpoint-item.completed .checkpoint-points {
+            background: #48bb78;
+        }
+        
+        #debug {
+            padding: 15px 20px;
+            background: #2d3748;
+            color: #e2e8f0;
+            margin: 15px;
+            border-radius: 12px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .debug-line {
+            padding: 2px 0;
+        }
+        
+        #photo-gallery {
+            padding: 15px 20px;
+            background: white;
+            margin: 15px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .photo-thumbnail {
+            position: relative;
+            aspect-ratio: 1;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .photo-thumbnail:hover {
+            transform: scale(1.05);
+        }
+        
+        .photo-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .photo-info {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 4px 8px;
+            font-size: 10px;
+        }
+        
+        .photo-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .photo-modal.active {
+            display: flex;
+        }
+        
+        .photo-modal img {
+            max-width: 90%;
+            max-height: 90%;
+            border-radius: 8px;
+        }
+        
+        .photo-modal-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            font-size: 40px;
+            cursor: pointer;
+            z-index: 10000;
+        }
+        
+        #tabs {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 8px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .tab:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .tab.active {
+            background: white;
+            color: #667eea;
+            font-weight: 600;
+        }
+        
+        #compass-view {
+            display: none;
+            width: 100%;
+            height: calc(100vh - 150px);
+            min-height: 450px;
+            background: linear-gradient(180deg, #87CEEB 0%, #E0F6FF 100%);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #compass-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: min(85vw, 85vh, 500px);
+            height: min(85vw, 85vh, 500px);
+            max-width: 500px;
+            max-height: 500px;
+        }
+        
+        @media (max-width: 768px) {
+            #compass-container {
+                width: min(90vw, calc(100vh - 300px));
+                height: min(90vw, calc(100vh - 300px));
+            }
+        }
+        
+        #compass-circle {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: radial-gradient(circle at center, #ffffff 0%, #f7fafc 70%, #e2e8f0 100%);
+            box-shadow: 
+                0 0 0 3px #2d3748,
+                0 0 0 6px #e2e8f0,
+                0 8px 30px rgba(0, 0, 0, 0.3),
+                inset 0 2px 10px rgba(255, 255, 255, 0.8),
+                inset 0 -2px 10px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease-out;
+        }
+        
+        #compass-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 30px;
+            height: 30px;
+            margin-left: -15px;
+            margin-top: -15px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, #ffd700 0%, #b8860b 100%);
+            box-shadow: 
+                0 2px 8px rgba(0, 0, 0, 0.3),
+                inset 0 1px 3px rgba(255, 255, 255, 0.5);
+            z-index: 10;
+        }
+        
+        #compass-center::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 8px;
+            height: 8px;
+            margin-left: -4px;
+            margin-top: -4px;
+            border-radius: 50%;
+            background: #2d3748;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+        }
+        
+        .compass-direction {
+            position: absolute;
+            font-weight: 700;
+            font-size: 22px;
+            color: #2d3748;
+            text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+            font-family: 'Georgia', serif;
+        }
+        
+        .compass-direction.north {
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #c53030;
+            font-size: 32px;
+            text-shadow: 0 2px 4px rgba(197, 48, 48, 0.3), 0 1px 2px rgba(255, 255, 255, 0.8);
+        }
+        
+        .compass-direction.east {
+            top: 50%;
+            right: 8px;
+            transform: translateY(-50%);
+        }
+        
+        .compass-direction.south {
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        
+        .compass-direction.west {
+            top: 50%;
+            left: 8px;
+            transform: translateY(-50%);
+        }
+        
+        .compass-subdirection {
+            position: absolute;
+            font-weight: 600;
+            font-size: 14px;
+            color: #4a5568;
+            text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+            font-family: 'Georgia', serif;
+        }
+        
+        #compass-needle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 8px;
+            height: 140px;
+            margin-left: -4px;
+            margin-top: -70px;
+            transform-origin: center center;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+            z-index: 5;
+        }
+        
+        .needle-north {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 50%;
+            background: linear-gradient(to bottom, #c53030 0%, #e53e3e 50%, #9b2c2c 100%);
+            clip-path: polygon(50% 0%, 20% 95%, 50% 100%, 80% 95%);
+        }
+        
+        .needle-north::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 2px;
+            height: 40%;
+            margin-left: -1px;
+            background: rgba(255, 255, 255, 0.4);
+        }
+        
+        .needle-south {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 50%;
+            background: linear-gradient(to top, #4a5568 0%, #718096 50%, #2d3748 100%);
+            clip-path: polygon(20% 5%, 50% 0%, 80% 5%, 50% 100%);
+        }
+        
+        #heading-display {
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 20px;
+            font-weight: 600;
+            color: #2d3748;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+        }
+        
+        @media (max-width: 768px) {
+            #heading-display {
+                top: 10px;
+                font-size: 18px;
+                padding: 8px 16px;
+            }
+        }
+        
+        #checkpoint-markers {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 280px;
+            height: 280px;
+            pointer-events: none;
+        }
+        
+        .checkpoint-marker {
+            position: absolute;
+            width: 36px;
+            height: 36px;
+            margin-left: -18px;
+            margin-top: -18px;
+            border-radius: 50%;
+            background: #667eea;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+            border: 3px solid white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            transition: transform 0.3s ease-out;
+        }
+        
+        @media (max-width: 768px) {
+            .checkpoint-marker {
+                width: 32px;
+                height: 32px;
+                margin-left: -16px;
+                margin-top: -16px;
+                font-size: 12px;
+            }
+        }
+        
+        .checkpoint-marker.completed {
+            background: #48bb78;
+        }
+        
+        #distance-bar-container {
+            position: absolute;
+            bottom: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 600px;
+            z-index: 100;
+        }
+        
+        @media (max-width: 768px) {
+            #distance-bar-container {
+                bottom: 10px;
+                width: 95%;
+            }
+        }
+        
+        #distance-bar-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #2d3748;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+        
+        #distance-bar {
+            position: relative;
+            height: 40px;
+            border-radius: 20px;
+            background: linear-gradient(to right, 
+                hsl(240, 80%, 50%) 0%, 
+                hsl(180, 80%, 50%) 25%,
+                hsl(120, 80%, 50%) 50%, 
+                hsl(60, 80%, 50%) 75%,
+                hsl(0, 80%, 50%) 100%);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            overflow: visible;
+        }
+        
+        .distance-marker {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 12px;
+            border: 3px solid white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .distance-marker:hover {
+            transform: translate(-50%, -50%) scale(1.2);
+        }
+        
+        .distance-marker.completed {
+            background: #48bb78 !important;
+        }
+        
+        .custom-tooltip {
+            position: fixed;
+            background: rgba(45, 55, 72, 0.95);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 10001;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            white-space: nowrap;
+            transform: translate(-50%, -100%);
+            margin-top: -10px;
+        }
+        
+        .custom-tooltip::after {
+            content: '';
+            position: absolute;
+            bottom: -6px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 6px solid rgba(45, 55, 72, 0.95);
+        }
+
+        /* インストールバナー用のスタイル */
+        #install-banner {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            z-index: 9999;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
+            animation: slideUp 0.3s ease-out;
+        }
+        
+        @keyframes slideUp {
+            from {
+                transform: translateY(100%);
+            }
+            to {
+                transform: translateY(0);
+            }
+        }
+        
+        #install-banner-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        #install-banner button {
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        
+        #install-banner button:hover {
+            background: #f7fafc;
+        }
+        
+        #install-banner .close-btn {
+            background: transparent;
+            color: white;
+            padding: 5px 10px;
+            font-size: 20px;
+        }
+        
+    </style>
+</head>
+<body>
+    <!-- PWAインストールバナー -->
+    <div id="install-banner">
+        <div id="install-banner-content">
+            <span>ホーム画面に追加してオフラインでも使用できます</span>
+            <div style="display: flex; gap: 10px;">
+                <button id="install-button">インストール</button>
+                <button class="close-btn" id="close-install-banner">&times;</button>
+            </div>
+        </div>
+    </div>
+    
+
+    <div id="header">
+        <h1>🏃 ロゲイニング PoC</h1>
+        <div id="tabs">
+            <div class="tab active" onclick="switchTab('map')">📍 マップ</div>
+            <div class="tab" id="compass-tab" onclick="switchTab('compass')" style="display: none;">🧭 コンパス</div>
+        </div>
+        <div id="status">
+            <span id="timer">残り時間: 02:00:00</span>
+            <span id="score">得点: 0点</span>
+        </div>
+    </div>
+    
+    <div id="map"></div>
+    
+    <div id="compass-view">
+        <div id="heading-display">方位: ---°</div>
+        <div id="compass-container">
+            <div id="compass-circle">
+                <div class="compass-direction north">N</div>
+                <div class="compass-direction east">E</div>
+                <div class="compass-direction south">S</div>
+                <div class="compass-direction west">W</div>
+                <div class="compass-subdirection" style="top: 15%; left: 50%; transform: translate(-50%, 0);">0°</div>
+                <div class="compass-subdirection" style="top: 50%; right: 15%; transform: translate(0, -50%);">90°</div>
+                <div class="compass-subdirection" style="bottom: 15%; left: 50%; transform: translate(-50%, 0);">180°</div>
+                <div class="compass-subdirection" style="top: 50%; left: 15%; transform: translate(0, -50%);">270°</div>
+                <canvas id="compass-ticks" width="500" height="500" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></canvas>
+                <div id="compass-center"></div>
+            </div>
+            <div id="checkpoint-markers"></div>
+            <div id="compass-needle">
+                <div class="needle-north"></div>
+                <div class="needle-south"></div>
+            </div>
+        </div>
+        <div id="distance-bar-container">
+            <div id="distance-bar-label">
+                <span>0m</span>
+                <span id="max-distance-label">---m</span>
+            </div>
+            <div id="distance-bar"></div>
+        </div>
+    </div>
+    
+    <div id="controls">
+        <button class="button button-primary" onclick="getCurrentLocation()">
+            📍 現在地を取得
+        </button>
+        <button class="button button-primary" onclick="document.getElementById('photo-input').click()">
+            📷 写真を撮影
+        </button>
+        <input type="file" id="photo-input" accept="image/*" capture="environment" onchange="handlePhoto(event)">
+        <button class="button button-success" onclick="checkNearbyCheckpoints()" id="check-button" disabled>
+            ✓ チェックポイント確認
+        </button>
+        <button class="button" style="background: #48bb78; color: white; margin-top: 15px;" onclick="toggleTracking()" id="tracking-button">
+            ▶️ 軌跡記録を開始
+        </button>
+        <button class="button" style="background: #e53e3e; color: white; margin-top: 20px;" onclick="clearLocalStorage()">
+            🗑️ データをリセット
+        </button>
+    </div>
+    
+    <div id="info">
+        <h3 style="margin-bottom: 10px; color: #2d3748;">📊 現在の状況</h3>
+        <div class="info-item">
+            <span class="info-label">接続状態</span>
+            <span class="info-value" id="online-status">確認中...</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">PWA状態</span>
+            <span class="info-value" id="pwa-status">確認中...</span>
+        </div>
+
+        <div class="info-item">
+            <span class="info-label">位置情報</span>
+            <span class="info-value" id="gps-status">未取得</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">GPS精度</span>
+            <span class="info-value" id="gps-accuracy">-</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">撮影写真</span>
+            <span class="info-value" id="photo-count">0枚</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">軌跡ポイント</span>
+            <span class="info-value" id="track-count">0個</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">クリア数</span>
+            <span class="info-value" id="cleared-count">0 / 5</span>
+        </div>
+    </div>
+    
+    <div id="checkpoint-list">
+        <h3 style="margin-bottom: 10px; color: #2d3748;">📍 チェックポイント</h3>
+        <div id="checkpoints"></div>
+    </div>
+    
+    <div id="photo-gallery">
+        <h3 style="margin-bottom: 10px; color: #2d3748;">📷 撮影した写真</h3>
+        <div class="photo-grid" id="photo-grid"></div>
+    </div>
+    
+    <div id="debug">
+        <strong>🐛 デバッグログ</strong>
+        <div id="debug-log"></div>
+    </div>
+    
+    <!-- 写真モーダル -->
+    <div id="photo-modal" class="photo-modal" onclick="closePhotoModal()">
+        <span class="photo-modal-close">&times;</span>
+        <img id="modal-image" src="" alt="拡大表示">
+    </div>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        // Service Worker登録
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then((registration) => {
+                        debugLog('✅ Service Worker登録成功');
+                        console.log('SW registered: ', registration);
+                    })
+                    .catch((error) => {
+                        debugLog('❌ Service Worker登録失敗: ' + error.message);
+                        console.log('SW registration failed: ', error);
+                    });
+            });
+        }
+        
+        // PWAインストールプロンプト
+        let deferredPrompt;
+        
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            
+            // インストールバナーを表示
+            const banner = document.getElementById('install-banner');
+            if (banner && !window.matchMedia('(display-mode: standalone)').matches) {
+                banner.style.display = 'block';
+            }
+            
+            debugLog('📱 PWAインストール可能');
+        });
+        
+        document.getElementById('install-button')?.addEventListener('click', async () => {
+            if (!deferredPrompt) return;
+            
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            
+            debugLog(`PWAインストール結果: ${outcome}`);
+            
+            if (outcome === 'accepted') {
+                document.getElementById('install-banner').style.display = 'none';
+            }
+            
+            deferredPrompt = null;
+        });
+        
+        document.getElementById('close-install-banner')?.addEventListener('click', () => {
+            document.getElementById('install-banner').style.display = 'none';
+        });
+        
+        // PWA状態の確認
+        function checkPWAStatus() {
+            const pwaStatusEl = document.getElementById('pwa-status');
+            if (!pwaStatusEl) return;
+            
+            if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+                pwaStatusEl.textContent = '✅ インストール済み';
+                pwaStatusEl.style.color = '#48bb78';
+                debugLog('PWAモードで実行中');
+            } else {
+                pwaStatusEl.textContent = 'ブラウザモード';
+                pwaStatusEl.style.color = '#718096';
+            }
+        }
+        
+        // グローバル変数
+        let map;
+        let currentPositionMarker;
+        let currentPosition = null;
+        let checkpoints = [];
+        let completedCheckpoints = new Set();
+        let photos = [];
+        let startTime = Date.now();
+        let timerInterval;
+        let isOnline = navigator.onLine;
+        let remainingTime = 120 * 60; // 2時間（秒）
+        let trackingEnabled = true; // 軌跡記録のオン/オフ
+        let trackingInterval = null;
+        let trackPoints = []; // 軌跡ポイント
+        let trackPolyline = null; // 地図上の軌跡線
+        let compassSupported = false; // コンパス機能のサポート状況
+        let currentHeading = 0; // 現在の方位
+        let currentView = 'map'; // 現在のビュー（map/compass）
+        let activeTooltip = null; // 現在表示中のツールチップ
+        let tooltipTimeout = null; // ツールチップの自動非表示タイマー
+        let compassCalibrated = false; // 磁気センサーの較正状態
+        let usingAbsoluteOrientation = false; // 絶対方位を使用しているか
+        
+        // チェックポイントのサンプルデータ（福島県南会津町田島駅周辺）
+        // 会津田島駅から遠いほど高得点に設定（5点刻み）
+        // 駅(0m):10点, 郵便局(150m):15点, 役場(280m):20点, 祇園会館(300m):25点
+        // 丸山公園(850m):30点, 運動公園(1200m):35点, びわのかげ(1400m):40点, たじま(1500m):45点
+        const sampleCheckpoints = [
+            { id: 1, name: "会津田島駅", lat: 37.20329853, lng: 139.77424063, points: 10 },
+            { id: 5, name: "田島郵便局", lat: 37.20304087405265, lng: 139.77286576693686, points: 15 },
+            { id: 3, name: "南会津町役場", lat: 37.200710699416376, lng: 139.77372578165173, points: 20 },
+            { id: 4, name: "旧会津田島祇園会館", lat: 37.205534721685595, lng: 139.77515747555398, points: 25 },
+            { id: 7, name: "丸山公園", lat: 37.20270904301629, lng: 139.76594854526823, points: 30 },
+            { id: 8, name: "びわのかげ運動公園芝生広場", lat: 37.205439950626705, lng: 139.7619837579642, points: 35 },
+            { id: 2, name: "びわのかげ公園", lat: 37.19933810720546, lng: 139.76057080171373, points: 40 },
+            { id: 6, name: "たじま公園", lat: 37.211615192715506, lng: 139.78760153630893, points: 45 }
+        ];
+        
+        // LocalStorageのキー
+        const STORAGE_KEY = 'rogaining_data';
+        
+        // 写真を圧縮してBase64化
+        function compressImage(file, maxWidth = 1280, quality = 0.6) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        // Canvasでリサイズ
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+                        
+                        // 最大幅を超える場合はリサイズ
+                        if (width > maxWidth) {
+                            height = (height * maxWidth) / width;
+                            width = maxWidth;
+                        }
+                        
+                        canvas.width = width;
+                        canvas.height = height;
+                        
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // JPEG圧縮
+                        const compressed = canvas.toDataURL('image/jpeg', quality);
+                        
+                        // 圧縮後のサイズをログ
+                        const sizeKB = (compressed.length * 0.75 / 1024).toFixed(1);
+                        debugLog(`写真を圧縮しました: ${sizeKB}KB`);
+                        
+                        resolve(compressed);
+                    };
+                    img.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
+                    img.src = e.target.result;
+                };
+                reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'));
+                reader.readAsDataURL(file);
+            });
+        }
+        
+        // データをLocalStorageに保存
+        function saveToLocalStorage() {
+            const data = {
+                completedCheckpoints: Array.from(completedCheckpoints),
+                photos: photos.map(p => ({
+                    timestamp: p.timestamp,
+                    position: p.position,
+                    dataUrl: p.dataUrl // Base64データを保存
+                })),
+                currentPosition: currentPosition,
+                remainingTime: remainingTime,
+                startTime: startTime,
+                trackPoints: trackPoints, // 軌跡データを保存
+                trackingEnabled: trackingEnabled,
+                lastSaved: new Date().toISOString()
+            };
+            
+            try {
+                const jsonStr = JSON.stringify(data);
+                const sizeKB = (jsonStr.length / 1024).toFixed(1);
+                localStorage.setItem(STORAGE_KEY, jsonStr);
+                debugLog(`データをLocalStorageに保存しました (${sizeKB}KB)`);
+            } catch (e) {
+                if (e.name === 'QuotaExceededError') {
+                    debugLog('エラー: LocalStorageの容量が不足しています');
+                    alert('保存容量が不足しています。古い写真を削除してください。');
+                } else {
+                    debugLog('LocalStorage保存エラー: ' + e.message);
+                }
+            }
+        }
+        
+        // LocalStorageからデータを読み込み
+        function loadFromLocalStorage() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (!saved) return false;
+                
+                const data = JSON.parse(saved);
+                completedCheckpoints = new Set(data.completedCheckpoints || []);
+                currentPosition = data.currentPosition;
+                remainingTime = data.remainingTime || 120 * 60;
+                startTime = data.startTime || Date.now();
+                trackPoints = data.trackPoints || []; // 軌跡データを復元
+                trackingEnabled = data.trackingEnabled !== undefined ? data.trackingEnabled : true;
+                
+                // 写真データを復元
+                photos = data.photos || [];
+                
+                debugLog('LocalStorageからデータを復元しました');
+                debugLog(`復元: ${completedCheckpoints.size}個のチェックポイントクリア済み`);
+                debugLog(`復元: ${photos.length}枚の写真`);
+                debugLog(`復元: ${trackPoints.length}個の軌跡ポイント`);
+                
+                return true;
+            } catch (e) {
+                debugLog('LocalStorage読み込みエラー: ' + e.message);
+                return false;
+            }
+        }
+        
+        // データをクリア
+        function clearLocalStorage() {
+            if (confirm('保存されているデータをすべて削除しますか？')) {
+                localStorage.removeItem(STORAGE_KEY);
+                location.reload();
+            }
+        }
+        
+        // オンライン/オフライン状態の監視
+        function setupOnlineDetection() {
+            window.addEventListener('online', () => {
+                isOnline = true;
+                debugLog('✅ オンラインに復帰しました');
+                updateOnlineStatus();
+            });
+            
+            window.addEventListener('offline', () => {
+                isOnline = false;
+                debugLog('⚠️ オフラインモードです');
+                updateOnlineStatus();
+            });
+            
+            updateOnlineStatus();
+        }
+        
+        // オンライン状態の表示更新
+        function updateOnlineStatus() {
+            const mapDiv = document.getElementById('map');
+            const onlineStatusEl = document.getElementById('online-status');
+            
+            if (!isOnline) {
+                mapDiv.style.opacity = '0.5';
+                mapDiv.style.pointerEvents = 'none';
+                if (onlineStatusEl) {
+                    onlineStatusEl.textContent = '⚠️ オフライン';
+                    onlineStatusEl.style.color = '#e53e3e';
+                }
+            } else {
+                mapDiv.style.opacity = '1';
+                mapDiv.style.pointerEvents = 'auto';
+                if (onlineStatusEl) {
+                    onlineStatusEl.textContent = '✅ オンライン';
+                    onlineStatusEl.style.color = '#48bb78';
+                }
+            }
+        }
+        
+        // 初期化
+        function init() {
+            debugLog('アプリケーション初期化開始');
+            
+            // LocalStorageからデータを復元
+            const restored = loadFromLocalStorage();
+            if (restored) {
+                debugLog('前回のセッションを復元しました');
+            }
+            
+            // オンライン/オフライン検知の設定
+            setupOnlineDetection();
+            
+            // PWA状態をチェック
+            checkPWAStatus();
+            
+            // 地図の初期化（南会津町田島駅を中心に）
+            map = L.map('map').setView([37.20329853, 139.77424063], 15);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            debugLog('地図を初期化しました');
+            
+            // チェックポイントの設定
+            checkpoints = [...sampleCheckpoints];
+            renderCheckpoints();
+            
+            // チェックポイントをマップに表示
+            checkpoints.forEach(cp => {
+                const marker = L.marker([cp.lat, cp.lng], {
+                    icon: L.divIcon({
+                        className: 'custom-icon',
+                        html: `<div style="background: ${completedCheckpoints.has(cp.id) ? '#48bb78' : '#667eea'}; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">${cp.points}</div>`,
+                        iconSize: [30, 30]
+                    })
+                }).addTo(map);
+                
+                marker.bindPopup(`<strong>${cp.name}</strong><br>${cp.points}点${completedCheckpoints.has(cp.id) ? '<br>✅ クリア済み' : ''}`);
+            });
+            
+            // タイマー開始
+            startTimer(remainingTime);
+            
+            // 復元した位置情報があれば地図に表示
+            if (currentPosition) {
+                if (currentPositionMarker) {
+                    map.removeLayer(currentPositionMarker);
+                }
+                
+                currentPositionMarker = L.marker([currentPosition.lat, currentPosition.lng], {
+                    icon: L.divIcon({
+                        className: 'current-position-icon',
+                        html: '<div style="background: #48bb78; border: 4px solid white; border-radius: 50%; width: 20px; height: 20px; box-shadow: 0 0 10px rgba(72, 187, 120, 0.6);"></div>',
+                        iconSize: [20, 20]
+                    })
+                }).addTo(map);
+                
+                document.getElementById('gps-status').textContent = '取得済み（復元）';
+                document.getElementById('gps-accuracy').textContent = `±${currentPosition.accuracy.toFixed(1)}m`;
+                document.getElementById('check-button').disabled = false;
+            }
+            
+            // スコアを更新
+            updateScore();
+            
+            // 写真数を更新
+            document.getElementById('photo-count').textContent = `${photos.length}枚`;
+            
+            // 軌跡ポイント数を更新
+            document.getElementById('track-count').textContent = `${trackPoints.length}個`;
+            
+            // 写真ギャラリーを表示
+            renderPhotoGallery();
+            
+            // 軌跡を地図に表示
+            if (trackPoints.length > 0) {
+                updateTrackPolyline();
+                debugLog(`軌跡を復元しました: ${trackPoints.length}ポイント`);
+            }
+            
+            // 軌跡記録を開始（復元時の状態に応じて）
+            if (trackingEnabled) {
+                startTracking();
+            }
+            updateTrackingButton();
+            
+            // オンライン状態を表示
+            updateOnlineStatus();
+            
+            debugLog('チェックポイントを配置しました');
+            
+            // コンパス機能の初期化
+            initCompass();
+            
+            // コンパスの目盛りを描画
+            drawCompassTicks();
+        }
+        
+        // コンパスの目盛りを描画
+        function drawCompassTicks() {
+            const canvas = document.getElementById('compass-ticks');
+            if (!canvas) return;
+            
+            const ctx = canvas.getContext('2d');
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const radius = canvas.width / 2 - 20;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 度数ごとに目盛りを描画
+            for (let i = 0; i < 360; i++) {
+                const angle = (i - 90) * Math.PI / 180;
+                
+                let tickLength;
+                let tickWidth;
+                let tickColor;
+                
+                if (i % 90 === 0) {
+                    // 主要方位（N, E, S, W）
+                    tickLength = 25;
+                    tickWidth = 3;
+                    tickColor = i === 0 ? '#c53030' : '#2d3748';
+                } else if (i % 45 === 0) {
+                    // 副次方位（NE, SE, SW, NW）
+                    tickLength = 20;
+                    tickWidth = 2;
+                    tickColor = '#4a5568';
+                } else if (i % 15 === 0) {
+                    // 15度ごと
+                    tickLength = 15;
+                    tickWidth = 2;
+                    tickColor = '#718096';
+                } else if (i % 5 === 0) {
+                    // 5度ごと
+                    tickLength = 10;
+                    tickWidth = 1;
+                    tickColor = '#a0aec0';
+                } else {
+                    continue; // 1度ごとは省略
+                }
+                
+                const startX = centerX + (radius - tickLength) * Math.cos(angle);
+                const startY = centerY + (radius - tickLength) * Math.sin(angle);
+                const endX = centerX + radius * Math.cos(angle);
+                const endY = centerY + radius * Math.sin(angle);
+                
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(endX, endY);
+                ctx.strokeStyle = tickColor;
+                ctx.lineWidth = tickWidth;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            }
+        }
+        
+        // 現在地取得
+        function getCurrentLocation() {
+            debugLog('位置情報取得を開始...');
+            
+            if (!navigator.geolocation) {
+                alert('このブラウザは位置情報機能に対応していません');
+                debugLog('エラー: Geolocation API非対応');
+                return;
+            }
+            
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    currentPosition = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                        accuracy: position.coords.accuracy
+                    };
+                    
+                    debugLog(`位置情報取得成功: ${currentPosition.lat.toFixed(6)}, ${currentPosition.lng.toFixed(6)}`);
+                    debugLog(`GPS精度: ${currentPosition.accuracy.toFixed(1)}m`);
+                    
+                    // 地図上に現在地を表示
+                    if (currentPositionMarker) {
+                        map.removeLayer(currentPositionMarker);
+                    }
+                    
+                    currentPositionMarker = L.marker([currentPosition.lat, currentPosition.lng], {
+                        icon: L.divIcon({
+                            className: 'current-position-icon',
+                            html: '<div style="background: #48bb78; border: 4px solid white; border-radius: 50%; width: 20px; height: 20px; box-shadow: 0 0 10px rgba(72, 187, 120, 0.6);"></div>',
+                            iconSize: [20, 20]
+                        })
+                    }).addTo(map);
+                    
+                    // 精度円を表示
+                    L.circle([currentPosition.lat, currentPosition.lng], {
+                        radius: currentPosition.accuracy,
+                        color: '#48bb78',
+                        fillColor: '#48bb78',
+                        fillOpacity: 0.1,
+                        weight: 1
+                    }).addTo(map);
+                    
+                    map.setView([currentPosition.lat, currentPosition.lng], 15);
+                    
+                    // UI更新
+                    document.getElementById('gps-status').textContent = '取得済み';
+                    document.getElementById('gps-accuracy').textContent = `±${currentPosition.accuracy.toFixed(1)}m`;
+                    document.getElementById('check-button').disabled = false;
+                    
+                    // LocalStorageに保存
+                    saveToLocalStorage();
+                    
+                    // 近くのチェックポイントをチェック
+                    highlightNearbyCheckpoints();
+                },
+                (error) => {
+                    let errorMessage = '';
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMessage = '位置情報の使用が拒否されました';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMessage = '位置情報が取得できません';
+                            break;
+                        case error.TIMEOUT:
+                            errorMessage = '位置情報の取得がタイムアウトしました';
+                            break;
+                    }
+                    alert(errorMessage);
+                    debugLog(`エラー: ${errorMessage}`);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        }
+        
+        // 写真撮影処理
+        async function handlePhoto(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            debugLog(`写真を撮影しました: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`);
+            
+            try {
+                // 写真を圧縮
+                const compressedDataUrl = await compressImage(file, 1280, 0.6);
+                
+                // 写真データを保存
+                photos.push({
+                    timestamp: new Date().toISOString(),
+                    position: currentPosition ? {...currentPosition} : null,
+                    dataUrl: compressedDataUrl
+                });
+                
+                document.getElementById('photo-count').textContent = `${photos.length}枚`;
+                
+                // サムネイルを表示
+                renderPhotoGallery();
+                
+                // LocalStorageに保存
+                saveToLocalStorage();
+                
+                debugLog(`保存された写真数: ${photos.length}枚`);
+            } catch (error) {
+                debugLog(`写真の処理に失敗: ${error.message}`);
+                alert('写真の処理に失敗しました');
+            }
+            
+            // inputをリセット（同じファイルを再度選択できるように）
+            event.target.value = '';
+        }
+        
+        // 近くのチェックポイントをハイライト
+        function highlightNearbyCheckpoints() {
+            if (!currentPosition) return;
+            
+            checkpoints.forEach(cp => {
+                const distance = calculateDistance(
+                    currentPosition.lat, currentPosition.lng,
+                    cp.lat, cp.lng
+                );
+                
+                if (distance <= 150 && !completedCheckpoints.has(cp.id)) {
+                    debugLog(`チェックポイント「${cp.name}」が近くにあります（${distance.toFixed(1)}m）`);
+                }
+            });
+            
+            renderCheckpoints();
+        }
+        
+        // チェックポイント確認
+        function checkNearbyCheckpoints() {
+            if (!currentPosition) {
+                alert('先に現在地を取得してください');
+                return;
+            }
+            
+            if (photos.length === 0) {
+                alert('先に写真を撮影してください');
+                return;
+            }
+            
+            let foundCheckpoint = false;
+            const checkpointThreshold = 100; // 100m以内
+            
+            checkpoints.forEach(cp => {
+                if (completedCheckpoints.has(cp.id)) return;
+                
+                const distance = calculateDistance(
+                    currentPosition.lat, currentPosition.lng,
+                    cp.lat, cp.lng
+                );
+                
+                if (distance <= checkpointThreshold) {
+                    completedCheckpoints.add(cp.id);
+                    foundCheckpoint = true;
+                    
+                    debugLog(`✓ チェックポイント「${cp.name}」をクリア！（${cp.points}点）`);
+                    alert(`🎉 チェックポイント「${cp.name}」をクリア！\n+${cp.points}点`);
+                    
+                    updateScore();
+                    renderCheckpoints();
+                    
+                    // LocalStorageに保存
+                    saveToLocalStorage();
+                }
+            });
+            
+            if (!foundCheckpoint) {
+                alert('近くにチェックポイントがありません（100m以内に接近してください）');
+                debugLog('チェックポイントが見つかりませんでした');
+            }
+        }
+        
+        // 写真ギャラリーを表示
+        function renderPhotoGallery() {
+            const grid = document.getElementById('photo-grid');
+            grid.innerHTML = '';
+            
+            if (photos.length === 0) {
+                grid.innerHTML = '<p style="color: #718096; text-align: center; padding: 20px;">写真はまだありません</p>';
+                return;
+            }
+            
+            photos.forEach((photo, index) => {
+                const div = document.createElement('div');
+                div.className = 'photo-thumbnail';
+                div.onclick = () => openPhotoModal(photo.dataUrl);
+                
+                const img = document.createElement('img');
+                img.src = photo.dataUrl;
+                img.alt = `写真 ${index + 1}`;
+                
+                const info = document.createElement('div');
+                info.className = 'photo-info';
+                const time = new Date(photo.timestamp).toLocaleTimeString('ja-JP', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                info.textContent = time;
+                
+                div.appendChild(img);
+                div.appendChild(info);
+                grid.appendChild(div);
+            });
+        }
+        
+        // 写真をモーダルで拡大表示
+        function openPhotoModal(dataUrl) {
+            const modal = document.getElementById('photo-modal');
+            const modalImage = document.getElementById('modal-image');
+            modalImage.src = dataUrl;
+            modal.classList.add('active');
+        }
+        
+        // モーダルを閉じる
+        function closePhotoModal() {
+            const modal = document.getElementById('photo-modal');
+            modal.classList.remove('active');
+        }
+        
+        // 軌跡記録を開始
+        function startTracking() {
+            if (trackingInterval) return; // 既に開始済み
+            
+            debugLog('軌跡記録を開始しました');
+            trackingEnabled = true;
+            
+            // 位置情報取得処理を関数化
+            const trackPosition = () => {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const point = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude,
+                            accuracy: position.coords.accuracy,
+                            timestamp: new Date().toISOString()
+                        };
+                        
+                        trackPoints.push(point);
+                        debugLog(`軌跡記録: ${trackPoints.length}個目のポイント取得`);
+                        
+                        // 現在位置を更新
+                        currentPosition = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude,
+                            accuracy: position.coords.accuracy
+                        };
+                        
+                        // 地図上の現在位置マーカーを更新
+                        if (currentPositionMarker) {
+                            map.removeLayer(currentPositionMarker);
+                        }
+                        
+                        currentPositionMarker = L.marker([currentPosition.lat, currentPosition.lng], {
+                            icon: L.divIcon({
+                                className: 'current-position-icon',
+                                html: '<div style="background: #48bb78; border: 4px solid white; border-radius: 50%; width: 20px; height: 20px; box-shadow: 0 0 10px rgba(72, 187, 120, 0.6);"></div>',
+                                iconSize: [20, 20]
+                            })
+                        }).addTo(map);
+                        
+                        // GPS情報を更新
+                        document.getElementById('gps-status').textContent = '取得済み';
+                        document.getElementById('gps-accuracy').textContent = `±${currentPosition.accuracy.toFixed(1)}m`;
+                        
+                        // 地図上の軌跡を更新
+                        updateTrackPolyline();
+                        
+                        // チェックポイントまでの距離表示を更新
+                        renderCheckpoints();
+                        highlightNearbyCheckpoints();
+                        
+                        // ポイント数を表示更新
+                        document.getElementById('track-count').textContent = `${trackPoints.length}個`;
+                        
+                        // LocalStorageに保存（5分ごと）
+                        if (trackPoints.length % 5 === 0) {
+                            saveToLocalStorage();
+                        }
+                    },
+                    (error) => {
+                        debugLog(`軌跡記録エラー: ${error.message}`);
+                    },
+                    {
+                        enableHighAccuracy: false, // バッテリー節約のため精度を下げる
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            };
+            
+            // 開始時に即座に1回取得
+            debugLog('初回位置情報を取得中...');
+            trackPosition();
+            
+            // 60秒ごとに位置情報を取得
+            trackingInterval = setInterval(() => {
+                if (!trackingEnabled) return;
+                trackPosition();
+            }, 60000); // 60秒間隔
+            
+            updateTrackingButton();
+        }
+        
+        // 軌跡記録を停止
+        function stopTracking() {
+            if (trackingInterval) {
+                clearInterval(trackingInterval);
+                trackingInterval = null;
+            }
+            
+            trackingEnabled = false;
+            debugLog('軌跡記録を停止しました');
+            saveToLocalStorage();
+            updateTrackingButton();
+            
+            // 距離表示に「(更新停止中)」を即座に表示
+            renderCheckpoints();
+        }
+        
+        // 軌跡記録のオン/オフを切り替え
+        function toggleTracking() {
+            if (trackingEnabled) {
+                stopTracking();
+            } else {
+                startTracking();
+            }
+        }
+        
+        // 軌跡記録ボタンの表示を更新
+        function updateTrackingButton() {
+            const button = document.getElementById('tracking-button');
+            if (!button) return;
+            
+            if (trackingEnabled) {
+                button.textContent = '⏸️ 軌跡記録を停止';
+                button.style.background = '#e53e3e';
+            } else {
+                button.textContent = '▶️ 軌跡記録を開始';
+                button.style.background = '#48bb78';
+            }
+        }
+        
+        // 地図上に軌跡を表示
+        function updateTrackPolyline() {
+            if (!map) return;
+            
+            // 既存の軌跡線を削除
+            if (trackPolyline) {
+                map.removeLayer(trackPolyline);
+            }
+            
+            // 軌跡ポイントが2つ以上ある場合のみ線を描画
+            if (trackPoints.length >= 2) {
+                const latLngs = trackPoints.map(p => [p.lat, p.lng]);
+                trackPolyline = L.polyline(latLngs, {
+                    color: '#667eea',
+                    weight: 3,
+                    opacity: 0.7
+                }).addTo(map);
+            }
+        }
+        
+        // 2点間の距離を計算（Haversine formula）
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; // 地球の半径（メートル）
+            const φ1 = lat1 * Math.PI / 180;
+            const φ2 = lat2 * Math.PI / 180;
+            const Δφ = (lat2 - lat1) * Math.PI / 180;
+            const Δλ = (lon2 - lon1) * Math.PI / 180;
+            
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            
+            return R * c; // メートル単位
+        }
+        
+        // チェックポイントリスト表示
+        function renderCheckpoints() {
+            const container = document.getElementById('checkpoints');
+            container.innerHTML = '';
+            
+            checkpoints.forEach(cp => {
+                const div = document.createElement('div');
+                div.className = 'checkpoint-item';
+                
+                if (completedCheckpoints.has(cp.id)) {
+                    div.classList.add('completed');
+                } else if (currentPosition) {
+                    const distance = calculateDistance(
+                        currentPosition.lat, currentPosition.lng,
+                        cp.lat, cp.lng
+                    );
+                    if (distance <= 150) {
+                        div.classList.add('near');
+                    }
+                }
+                
+                div.innerHTML = `
+                    <div>
+                        <div class="checkpoint-name">${completedCheckpoints.has(cp.id) ? '✓ ' : ''}${cp.name}</div>
+                        ${currentPosition ? `<div style="font-size: 12px; color: #718096; margin-top: 4px;">
+                            ${calculateDistance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng).toFixed(0)}m${!trackingEnabled ? ' <span style="color: #e53e3e;">(更新停止中)</span>' : ''}
+                        </div>` : ''}
+                    </div>
+                    <div class="checkpoint-points">${cp.points}点</div>
+                `;
+                
+                container.appendChild(div);
+            });
+            
+            document.getElementById('cleared-count').textContent = 
+                `${completedCheckpoints.size} / ${checkpoints.length}`;
+        }
+        
+        // スコア更新
+        function updateScore() {
+            let totalScore = 0;
+            checkpoints.forEach(cp => {
+                if (completedCheckpoints.has(cp.id)) {
+                    totalScore += cp.points;
+                }
+            });
+            
+            document.getElementById('score').textContent = `得点: ${totalScore}点`;
+        }
+        
+        // タイマー
+        function startTimer(seconds) {
+            remainingTime = seconds;
+            
+            const updateTimer = () => {
+                const hours = Math.floor(remainingTime / 3600);
+                const minutes = Math.floor((remainingTime % 3600) / 60);
+                const secs = remainingTime % 60;
+                
+                document.getElementById('timer').textContent = 
+                    `残り時間: ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+                
+                if (remainingTime <= 0) {
+                    clearInterval(timerInterval);
+                    alert('制限時間終了！');
+                    debugLog('競技終了');
+                    saveToLocalStorage();
+                }
+                
+                remainingTime--;
+                
+                // 30秒ごとにLocalStorageに保存
+                if (remainingTime % 30 === 0) {
+                    saveToLocalStorage();
+                }
+            };
+            
+            updateTimer();
+            timerInterval = setInterval(updateTimer, 1000);
+        }
+        
+        // デバッグログ
+        function debugLog(message) {
+            const log = document.getElementById('debug-log');
+            const time = new Date().toLocaleTimeString('ja-JP');
+            const line = document.createElement('div');
+            line.className = 'debug-line';
+            line.textContent = `[${time}] ${message}`;
+            log.insertBefore(line, log.firstChild);
+            
+            // 最新20件のみ保持
+            while (log.children.length > 20) {
+                log.removeChild(log.lastChild);
+            }
+        }
+        
+        // コンパス機能の初期化
+        function initCompass() {
+            // DeviceOrientationEventのサポート確認
+            if (window.DeviceOrientationEvent) {
+                debugLog('コンパス機能をチェック中...');
+                
+                // iOSの場合は許可が必要
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    // iOS 13+の場合、まだ許可を求めない（タブクリック時に許可を求める）
+                    compassSupported = true;
+                    document.getElementById('compass-tab').style.display = 'block';
+                    debugLog('コンパス機能が利用可能です（iOS、許可が必要）');
+                } else {
+                    // Android等、許可不要の場合
+                    compassSupported = true;
+                    document.getElementById('compass-tab').style.display = 'block';
+                    debugLog('コンパス機能が利用可能です');
+                    startCompass();
+                }
+            } else {
+                debugLog('コンパス機能は利用できません');
+            }
+        }
+        
+        // コンパスの開始
+        function startCompass() {
+            // 絶対方位イベント（磁気センサー使用）を優先的に試す
+            if ('ondeviceorientationabsolute' in window) {
+                window.addEventListener('deviceorientationabsolute', handleAbsoluteOrientation);
+                usingAbsoluteOrientation = true;
+                debugLog('コンパスを開始しました（絶対方位モード - 磁気センサー使用）');
+            } else {
+                window.addEventListener('deviceorientation', handleOrientation);
+                debugLog('コンパスを開始しました（標準方位モード）');
+            }
+        }
+        
+        // 絶対方位データの処理（magnetometerを使用）
+        function handleAbsoluteOrientation(event) {
+            if (event.alpha !== null) {
+                // 絶対方位イベントは常に磁北を基準とする
+                currentHeading = 360 - event.alpha;
+                compassCalibrated = true;
+                updateCompassDisplay();
+            }
+        }
+        
+        // iOSでの許可要求
+        async function requestCompassPermission() {
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission === 'granted') {
+                        startCompass();
+                        debugLog('コンパスの許可が付与されました');
+                        return true;
+                    } else {
+                        alert('コンパス機能を使用するには許可が必要です');
+                        debugLog('コンパスの許可が拒否されました');
+                        return false;
+                    }
+                } catch (error) {
+                    debugLog('コンパス許可エラー: ' + error.message);
+                    return false;
+                }
+            }
+            return true;
+        }
+        
+        // 方位データの処理
+        function handleOrientation(event) {
+            let heading = 0;
+            
+            if (event.webkitCompassHeading !== undefined) {
+                // iOS Safari - 磁気センサーを使用
+                heading = event.webkitCompassHeading;
+                compassCalibrated = true;
+            } else if (event.alpha !== null) {
+                // Android Chrome等
+                if (event.absolute === true) {
+                    // 磁気センサーによる絶対方位
+                    heading = 360 - event.alpha;
+                    compassCalibrated = true;
+                } else if (event.absolute === false) {
+                    // 相対方位（磁気センサー未使用）
+                    heading = 360 - event.alpha;
+                    if (!compassCalibrated) {
+                        debugLog('⚠️ 磁気センサーが使用されていません（相対方位モード）');
+                        compassCalibrated = false;
+                    }
+                } else {
+                    // absolute が undefined の場合（古いブラウザ）
+                    heading = 360 - event.alpha;
+                }
+            }
+            
+            currentHeading = heading;
+            updateCompassDisplay();
+        }
+        
+        // コンパス表示の更新
+        function updateCompassDisplay() {
+            const compassCircle = document.getElementById('compass-circle');
+            const headingDisplay = document.getElementById('heading-display');
+            
+            if (compassCircle) {
+                compassCircle.style.transform = `rotate(${currentHeading}deg)`;
+            }
+            
+            if (headingDisplay) {
+                let displayText = `方位: ${Math.round(currentHeading)}°`;
+                
+                // 較正状態を表示
+                if (usingAbsoluteOrientation) {
+                    displayText += ' 🧭'; // 磁気センサー使用中
+                } else if (compassCalibrated === false) {
+                    displayText += ' ⚠️'; // 相対方位モード
+                }
+                
+                headingDisplay.textContent = displayText;
+            }
+            
+            // チェックポイントマーカーを更新
+            updateCheckpointMarkers();
+        }
+        
+        // チェックポイントマーカーの更新
+        function updateCheckpointMarkers() {
+            if (!currentPosition) return;
+            
+            const container = document.getElementById('checkpoint-markers');
+            if (!container) return;
+            
+            container.innerHTML = '';
+            
+            // すべてのチェックポイントまでの距離を計算して、最大・最小を求める
+            let distances = [];
+            checkpoints.forEach(cp => {
+                if (completedCheckpoints.has(cp.id)) return;
+                const distance = calculateDistance(
+                    currentPosition.lat, currentPosition.lng,
+                    cp.lat, cp.lng
+                );
+                distances.push(distance);
+            });
+            
+            const minDistance = Math.min(...distances);
+            const maxDistance = Math.max(...distances);
+            
+            checkpoints.forEach(cp => {
+                if (completedCheckpoints.has(cp.id)) return; // クリア済みは表示しない
+                
+                // チェックポイントまでの距離を計算
+                const distance = calculateDistance(
+                    currentPosition.lat, currentPosition.lng,
+                    cp.lat, cp.lng
+                );
+                
+                // 距離に応じた色を計算（近い=緑、中間=黄、遠い=赤）
+                const color = getDistanceColor(distance, minDistance, maxDistance);
+                
+                // チェックポイントへの方位を計算
+                const bearing = calculateBearing(
+                    currentPosition.lat, currentPosition.lng,
+                    cp.lat, cp.lng
+                );
+                
+                // 現在の方位を考慮した相対角度
+                const relativeBearing = (bearing - currentHeading + 360) % 360;
+                
+                // マーカーを配置
+                const marker = document.createElement('div');
+                marker.className = 'checkpoint-marker';
+                marker.textContent = cp.points;
+                marker.style.background = color;
+                
+                // 円の中心から外側に配置（コンテナサイズの45%）
+                const container = document.getElementById('compass-container');
+                const containerSize = container ? container.offsetWidth : 280;
+                const centerPoint = containerSize / 2;
+                const radius = centerPoint * 0.88; // 中心から88%の位置
+                const angle = (relativeBearing - 90) * Math.PI / 180; // -90度でN方向
+                const x = centerPoint + radius * Math.cos(angle);
+                const y = centerPoint + radius * Math.sin(angle);
+                
+                marker.style.left = x + 'px';
+                marker.style.top = y + 'px';
+                marker.style.transform = `translate(-50%, -50%) rotate(${-currentHeading}deg)`;
+                
+                // タップイベントを追加
+                marker.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const rect = marker.getBoundingClientRect();
+                    const tooltipX = rect.left + rect.width / 2;
+                    const tooltipY = rect.top;
+                    showTooltip(`${cp.name}: ${Math.round(distance)}m`, tooltipX, tooltipY);
+                });
+                
+                container.appendChild(marker);
+            });
+            
+            // 距離バーを更新
+            updateDistanceBar(minDistance, maxDistance);
+        }
+        
+        // 距離バーの更新
+        function updateDistanceBar(minDist, maxDist) {
+            if (!currentPosition) return;
+            
+            const bar = document.getElementById('distance-bar');
+            const maxLabel = document.getElementById('max-distance-label');
+            
+            if (!bar) return;
+            
+            bar.innerHTML = '';
+            
+            // 最大距離ラベルを更新
+            if (maxLabel) {
+                maxLabel.textContent = `${Math.round(maxDist)}m`;
+            }
+            
+            // 各チェックポイントをバー上に配置
+            checkpoints.forEach(cp => {
+                if (completedCheckpoints.has(cp.id)) return; // クリア済みは表示しない
+                
+                const distance = calculateDistance(
+                    currentPosition.lat, currentPosition.lng,
+                    cp.lat, cp.lng
+                );
+                
+                // 距離に応じた色を取得
+                const color = getDistanceColor(distance, minDist, maxDist);
+                
+                // バー上の位置を計算（0%〜100%）
+                const position = maxDist > minDist 
+                    ? ((distance - minDist) / (maxDist - minDist)) * 100 
+                    : 50;
+                
+                // マーカーを作成
+                const marker = document.createElement('div');
+                marker.className = 'distance-marker';
+                if (completedCheckpoints.has(cp.id)) {
+                    marker.classList.add('completed');
+                }
+                marker.textContent = cp.points;
+                marker.style.background = color;
+                marker.style.left = `${position}%`;
+                marker.title = `${cp.name}: ${Math.round(distance)}m`;
+                
+                // タップイベントを追加
+                marker.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const rect = marker.getBoundingClientRect();
+                    const tooltipX = rect.left + rect.width / 2;
+                    const tooltipY = rect.top;
+                    showTooltip(`${cp.name}: ${Math.round(distance)}m`, tooltipX, tooltipY);
+                });
+                
+                bar.appendChild(marker);
+            });
+        }
+        
+        // 距離に応じた色を計算（青方偏移・赤方偏移モチーフ）
+        function getDistanceColor(distance, minDist, maxDist) {
+            if (maxDist === minDist) {
+                // すべて同じ距離の場合は中間色（緑）
+                return 'hsl(120, 80%, 50%)';
+            }
+            
+            // 0（近い）から1（遠い）に正規化
+            const normalized = (distance - minDist) / (maxDist - minDist);
+            
+            let hue;
+            if (normalized <= 0.5) {
+                // 前半: 青（240度）→ 緑（120度）
+                hue = 240 - (120 * normalized * 2);
+            } else {
+                // 後半: 緑（120度）→ 赤（0度）
+                hue = 120 - (120 * (normalized - 0.5) * 2);
+            }
+            
+            return `hsl(${hue}, 80%, 50%)`;
+        }
+        
+        // カスタムツールチップの表示
+        function showTooltip(text, x, y) {
+            // 既存のツールチップを削除
+            hideTooltip();
+            
+            // 新しいツールチップを作成
+            const tooltip = document.createElement('div');
+            tooltip.className = 'custom-tooltip';
+            tooltip.textContent = text;
+            tooltip.style.left = x + 'px';
+            tooltip.style.top = y + 'px';
+            
+            document.body.appendChild(tooltip);
+            activeTooltip = tooltip;
+            
+            // 3秒後に自動的に非表示
+            clearTimeout(tooltipTimeout);
+            tooltipTimeout = setTimeout(hideTooltip, 3000);
+        }
+        
+        // ツールチップを非表示
+        function hideTooltip() {
+            if (activeTooltip) {
+                document.body.removeChild(activeTooltip);
+                activeTooltip = null;
+            }
+            clearTimeout(tooltipTimeout);
+        }
+        
+        // 2点間の方位を計算（北を0度とする）
+        function calculateBearing(lat1, lon1, lat2, lon2) {
+            const φ1 = lat1 * Math.PI / 180;
+            const φ2 = lat2 * Math.PI / 180;
+            const Δλ = (lon2 - lon1) * Math.PI / 180;
+            
+            const y = Math.sin(Δλ) * Math.cos(φ2);
+            const x = Math.cos(φ1) * Math.sin(φ2) -
+                      Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+            const θ = Math.atan2(y, x);
+            
+            return (θ * 180 / Math.PI + 360) % 360;
+        }
+        
+        // ツールチップを閉じるためのイベントリスナー
+        document.addEventListener('click', (e) => {
+            if (activeTooltip && !e.target.classList.contains('checkpoint-marker') && 
+                !e.target.classList.contains('distance-marker')) {
+                hideTooltip();
+            }
+        });
+        
+        // タブの切り替え
+        async function switchTab(view) {
+            // iOSでコンパスタブを初めてクリックした場合、許可を求める
+            if (view === 'compass' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                const hasListeners = window.ondeviceorientation !== null;
+                if (!hasListeners) {
+                    const granted = await requestCompassPermission();
+                    if (!granted) {
+                        return; // 許可されなかった場合は切り替えない
+                    }
+                }
+            }
+            
+            currentView = view;
+            
+            // タブのアクティブ状態を更新
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // ビューの切り替え
+            if (view === 'map') {
+                document.getElementById('map').style.display = 'block';
+                document.getElementById('compass-view').style.display = 'none';
+            } else if (view === 'compass') {
+                document.getElementById('map').style.display = 'none';
+                document.getElementById('compass-view').style.display = 'flex';
+                updateCompassDisplay();
+            }
+            
+            debugLog(`ビューを切り替えました: ${view}`);
+        }
+        
+        // ページ読み込み時に初期化
+        window.onload = init;
+    </script>
+</body>
+</html>
