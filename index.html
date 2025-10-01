@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ロゲイニング PoC</title>
     <!-- PWA メタタグ -->
-    <meta name="description" content="オフライン対応のロゲイニング競技支援アプリのPoCです">
+    <meta name="description" content="オフライン対応のロゲイニング競技支援アプリ">
     <meta name="theme-color" content="#667eea">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="ロゲイニング PoC">
+    <meta name="apple-mobile-web-app-title" content="ロゲイニング">
     
     <!-- マニフェスト -->
     <link rel="manifest" href="manifest.json">
@@ -1844,10 +1844,11 @@
         function updateCheckpointMarkers() {
             if (!currentPosition) return;
             
-            const container = document.getElementById('checkpoint-markers');
-            if (!container) return;
+            const markersContainer = document.getElementById('checkpoint-markers');
+            if (!markersContainer) return;
             
-            container.innerHTML = '';
+            // 古いマーカーをすべて削除
+            markersContainer.innerHTML = '';
             
             // すべてのチェックポイントまでの距離を計算して、最大・最小を求める
             let distances = [];
@@ -1862,6 +1863,12 @@
             
             const minDistance = Math.min(...distances);
             const maxDistance = Math.max(...distances);
+            
+            // コンパスコンテナのサイズを取得
+            const compassContainer = document.getElementById('compass-container');
+            const containerSize = compassContainer ? compassContainer.offsetWidth : 280;
+            const centerPoint = containerSize / 2;
+            const radius = centerPoint * 0.88; // 中心から88%の位置
             
             checkpoints.forEach(cp => {
                 if (completedCheckpoints.has(cp.id)) return; // クリア済みは表示しない
@@ -1890,11 +1897,7 @@
                 marker.textContent = cp.points;
                 marker.style.background = color;
                 
-                // 円の中心から外側に配置（コンテナサイズの45%）
-                const container = document.getElementById('compass-container');
-                const containerSize = container ? container.offsetWidth : 280;
-                const centerPoint = containerSize / 2;
-                const radius = centerPoint * 0.88; // 中心から88%の位置
+                // 円周上の位置を計算
                 const angle = (relativeBearing - 90) * Math.PI / 180; // -90度でN方向
                 const x = centerPoint + radius * Math.cos(angle);
                 const y = centerPoint + radius * Math.sin(angle);
@@ -1912,7 +1915,8 @@
                     showTooltip(`${cp.name}: ${Math.round(distance)}m`, tooltipX, tooltipY);
                 });
                 
-                container.appendChild(marker);
+                // 正しいコンテナに追加
+                markersContainer.appendChild(marker);
             });
             
             // 距離バーを更新
