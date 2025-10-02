@@ -235,9 +235,9 @@ class SonarView {
   }
   
   drawSonarCheckpoints(ctx, cx, cy, radius) {
-    const currentPosition = window.currentPosition;
-    const checkpoints = window.checkpoints || [];
-    const completedCheckpoints = window.completedCheckpoints || new Set();
+    const currentPosition = window.currentPosition ? window.currentPosition() : null;
+    const checkpoints = window.checkpoints ? window.checkpoints() : [];
+    const completedCheckpoints = window.completedCheckpoints ? window.completedCheckpoints() : new Set();
     
     if (!currentPosition) return;
     
@@ -344,8 +344,8 @@ class SonarView {
     
     markersContainer.innerHTML = '';
     
-    const checkpoints = window.checkpoints || [];
-    const completedCheckpoints = window.completedCheckpoints || new Set();
+    const checkpoints = window.checkpoints ? window.checkpoints() : [];
+    const completedCheckpoints = window.completedCheckpoints ? window.completedCheckpoints() : new Set();
     const geoMgr = window.geoMgr;
     if (!geoMgr) return;
     
@@ -533,8 +533,8 @@ class SonarView {
   }
   
   getVisibleCheckpoints(currentPosition) {
-    const checkpoints = window.checkpoints || [];
-    const completedCheckpoints = window.completedCheckpoints || new Set();
+    const checkpoints = window.checkpoints ? window.checkpoints() : [];
+    const completedCheckpoints = window.completedCheckpoints ? window.completedCheckpoints() : new Set();
     const geoMgr = window.geoMgr;
     if (!geoMgr) return [];
     
@@ -563,6 +563,7 @@ class SonarView {
     const geoMgr = window.geoMgr;
     if (!geoMgr) return;
     
+    // パラメータで渡されたcheckpointsとcompletedIdsを使用
     let nearestCP = null;
     let nearestDist = Infinity;
     
@@ -653,7 +654,7 @@ class SonarView {
     const cy = h / 2;
     const radius = Math.min(cx, cy) - 20;
     
-    const checkpoints = window.checkpoints || [];
+    const checkpoints = window.checkpoints ? window.checkpoints() : [];
     let nearestCP = null;
     let minDistance = Infinity;
     
