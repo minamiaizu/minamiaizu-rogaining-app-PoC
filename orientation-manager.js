@@ -1,10 +1,10 @@
 /**
- * OrientationManager - クォータニオン補間モード付き
- * 暴れ検出時に動的にクォータニオンモードへ切り替え
+ * OrientationManager - クォータニオンモード固定版
+ * 常に安定した方位計算を提供
  */
 
-// 簡易Quaternionクラス（外部ライブラリを使わない場合）
-class SimpleQuaternion {
+// 簡易Quaternionクラス
+class Quaternion {
   constructor(w = 1, x = 0, y = 0, z = 0) {
     this.w = w;
     this.x = x;
@@ -28,33 +28,27 @@ class SimpleQuaternion {
     let w, x, y, z;
     
     // ZXY順序（DeviceOrientation用）
-    if (order === 'ZXY') {
-      w = ca * cb * cg - sa * sb * sg;
-      x = sa * cb * cg - ca * sb * sg;
-      y = ca * sb * cg + sa * cb * sg;
-      z = ca * cb * sg + sa * sb * cg;
-    }
+    w = ca * cb * cg - sa * sb * sg;
+    x = sa * cb * cg - ca * sb * sg;
+    y = ca * sb * cg + sa * cb * sg;
+    z = ca * cb * sg + sa * sb * cg;
     
-    return new SimpleQuaternion(w, x, y, z);
+    return new Quaternion(w, x, y, z);
   }
   
   toEuler(order = 'ZXY') {
-    let alpha, beta, gamma;
+    const sinr_cosp = 2 * (this.w * this.x + this.y * this.z);
+    const cosr_cosp = 1 - 2 * (this.x * this.x + this.y * this.y);
+    const alpha = Math.atan2(sinr_cosp, cosr_cosp);
     
-    if (order === 'ZXY') {
-      const sinr_cosp = 2 * (this.w * this.x + this.y * this.z);
-      const cosr_cosp = 1 - 2 * (this.x * this.x + this.y * this.y);
-      alpha = Math.atan2(sinr_cosp, cosr_cosp);
-      
-      const sinp = 2 * (this.w * this.y - this.z * this.x);
-      beta = Math.abs(sinp) >= 1 ? 
-        Math.sign(sinp) * Math.PI / 2 : 
-        Math.asin(sinp);
-      
-      const siny_cosp = 2 * (this.w * this.z + this.x * this.y);
-      const cosy_cosp = 1 - 2 * (this.y * this.y + this.z * this.z);
-      gamma = Math.atan2(siny_cosp, cosy_cosp);
-    }
+    const sinp = 2 * (this.w * this.y - this.z * this.x);
+    const beta = Math.abs(sinp) >= 1 ? 
+      Math.sign(sinp) * Math.PI / 2 : 
+      Math.asin(sinp);
+    
+    const siny_cosp = 2 * (this.w * this.z + this.x * this.y);
+    const cosy_cosp = 1 - 2 * (this.y * this.y + this.z * this.z);
+    const gamma = Math.atan2(siny_cosp, cosy_cosp);
     
     return {
       alpha: alpha * 180 / Math.PI,
@@ -68,18 +62,18 @@ class SimpleQuaternion {
     let dot = q1.w * q2.w + q1.x * q2.x + q1.y * q2.y + q1.z * q2.z;
     
     if (dot < 0) {
-      q2 = new SimpleQuaternion(-q2.w, -q2.x, -q2.y, -q2.z);
+      q2 = new Quaternion(-q2.w, -q2.x, -q2.y, -q2.z);
       dot = -dot;
     }
     
     if (dot > 0.9995) {
-      // 線形補間で十分
-      return new SimpleQuaternion(
+      // 線形補間
+      return new Quaternion(
         q1.w + t * (q2.w - q1.w),
         q1.x + t * (q2.x - q1.x),
         q1.y + t * (q2.y - q1.y),
         q1.z + t * (q2.z - q1.z)
-      );
+      ).normalize();
     }
     
     const theta = Math.acos(dot);
@@ -87,7 +81,7 @@ class SimpleQuaternion {
     const w1 = Math.sin((1 - t) * theta) / sinTheta;
     const w2 = Math.sin(t * theta) / sinTheta;
     
-    return new SimpleQuaternion(
+    return new Quaternion(
       w1 * q1.w + w2 * q2.w,
       w1 * q1.x + w2 * q2.x,
       w1 * q1.y + w2 * q2.y,
@@ -110,53 +104,35 @@ class SimpleQuaternion {
 
 class OrientationManager {
   constructor() {
-    // 基本状態（既存）
+    // 基本状態
     this.currentHeading = 0;
     this.smoothedHeading = 0;
-    this.lastStableHeading = 0;
-    this.confidence = 1.0;
     
     // センサーデータ
     this.deviceAlpha = 0;
     this.deviceBeta = 0;
     this.deviceGamma = 0;
     
-    // ジャイロデータ
-    this.gyroHeading = 0;
-    this.lastGyroTimestamp = null;
-    this.gyroCalibrated = false;
-    this.gyroAvailable = false;
-    
-    // クォータニオンモード用
-    this.quaternionMode = false;
-    this.currentQuaternion = new SimpleQuaternion();
-    this.targetQuaternion = new SimpleQuaternion();
-    this.lastStableQuaternion = new SimpleQuaternion();
-    
-    // 暴れ検出用
-    this.instabilityDetector = {
-      samples: [],
-      maxSamples: 10,
-      threshold: 30, // 30度/秒以上の変化で不安定と判定
-      consecutiveUnstable: 0,
-      switchThreshold: 3 // 3フレーム連続で不安定なら切り替え
-    };
+    // クォータニオン
+    this.currentQuaternion = new Quaternion();
+    this.targetQuaternion = new Quaternion();
     
     // プラットフォーム検出
     this.platform = this.detectPlatform();
     
-    // モード設定
-    this.mode = 'compass'; // 'compass' or 'ar'
-    this.interpolationMode = 'euler'; // 'euler' or 'quaternion'
+    // モード（互換性のため残すが常にar）
+    this.mode = 'ar';
+    
+    // 平滑化係数
+    this.smoothingFactor = 0.25;  // 25%新しい値を採用（より反応的）
     
     // コールバック
     this.onUpdate = null;
     
     // デバッグ
     this.debugInfo = {
-      instabilityLevel: 0,
-      quaternionActive: false,
-      switchCount: 0
+      updateCount: 0,
+      lastUpdate: Date.now()
     };
   }
   
@@ -164,26 +140,26 @@ class OrientationManager {
     const ua = navigator.userAgent;
     const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
     const isAndroid = /Android/.test(ua);
-    const hasWebkitCompass = 'webkitCompassHeading' in (window.DeviceOrientationEvent.prototype || {});
     
     return {
       isIOS,
       isAndroid,
-      hasWebkitCompass,
+      hasWebkitCompass: 'webkitCompassHeading' in (window.DeviceOrientationEvent.prototype || {}),
       name: isIOS ? 'iOS' : (isAndroid ? 'Android' : 'Unknown')
     };
   }
   
   async init() {
     try {
+      // iOS権限リクエスト
       if (this.platform.isIOS) {
         await this.requestIOSPermissions();
       }
       
+      // イベントリスナー設定
       this.setupOrientationListener();
-      this.setupMotionListener();
       
-      this.log('✅ OrientationManager 初期化完了');
+      this.log('✅ OrientationManager (Quaternion) 初期化完了');
       return true;
     } catch (error) {
       this.log('❌ 初期化エラー: ' + error.message);
@@ -195,388 +171,112 @@ class OrientationManager {
     const permissions = [];
     
     if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-      permissions.push(
-        DeviceOrientationEvent.requestPermission()
-          .then(state => ({ type: 'orientation', state }))
-      );
+      const result = await DeviceOrientationEvent.requestPermission();
+      this.log(`📱 iOS Orientation権限: ${result}`);
+      if (result !== 'granted') throw new Error('Orientation permission denied');
     }
     
     if (typeof DeviceMotionEvent.requestPermission === 'function') {
-      permissions.push(
-        DeviceMotionEvent.requestPermission()
-          .then(state => ({ type: 'motion', state }))
-      );
+      const result = await DeviceMotionEvent.requestPermission();
+      this.log(`📱 iOS Motion権限: ${result}`);
     }
-    
-    const results = await Promise.all(permissions);
-    results.forEach(result => {
-      this.log(`📱 iOS ${result.type}権限: ${result.state}`);
-    });
   }
   
   setupOrientationListener() {
     window.addEventListener('deviceorientation', (e) => {
+      if (e.alpha === null || e.beta === null || e.gamma === null) return;
+      
+      // センサーデータ保存
       this.deviceAlpha = e.alpha;
       this.deviceBeta = e.beta;
       this.deviceGamma = e.gamma;
       
-      // 暴れ検出
-      this.detectInstability(e.alpha, e.beta, e.gamma);
-      
-      // コンパスデータ処理
-      const compassHeading = this.extractCompassHeading(e);
-      if (compassHeading !== null) {
-        this.processCompassData(compassHeading, e.beta);
+      // クォータニオン処理
+      this.updateQuaternion(e);
+    });
+    
+    // ピッチ角更新用
+    window.addEventListener('deviceorientation', (e) => {
+      if (e.beta !== null && typeof updatePitchIndicator === 'function') {
+        // グローバル関数の互換性
+        window.devicePitch = e.beta;
+        updatePitchIndicator();
       }
     });
   }
   
-  setupMotionListener() {
-    window.addEventListener('devicemotion', (e) => {
-      if (!e.rotationRate) return;
-      
-      const { alpha, beta, gamma } = e.rotationRate;
-      if (alpha !== null || beta !== null || gamma !== null) {
-        this.gyroAvailable = true;
-      }
-      
-      if (this.mode === 'ar' && this.gyroAvailable) {
-        this.updateGyroHeading(e.rotationRate, e.timeStamp || Date.now());
-      }
-    });
-  }
-  
-  /**
-   * 暴れ検出
-   */
-  detectInstability(alpha, beta, gamma) {
-    const now = Date.now();
-    
-    // サンプル追加
-    this.instabilityDetector.samples.push({
-      alpha, beta, gamma, timestamp: now
-    });
-    
-    // 古いサンプル削除
-    if (this.instabilityDetector.samples.length > this.instabilityDetector.maxSamples) {
-      this.instabilityDetector.samples.shift();
-    }
-    
-    // 2つ以上のサンプルがないと判定できない
-    if (this.instabilityDetector.samples.length < 2) return;
-    
-    // 変化率計算
-    const latest = this.instabilityDetector.samples[this.instabilityDetector.samples.length - 1];
-    const previous = this.instabilityDetector.samples[this.instabilityDetector.samples.length - 2];
-    const dt = (latest.timestamp - previous.timestamp) / 1000;
-    
-    if (dt <= 0) return;
-    
-    // 角速度計算
-    let alphaDiff = this.calculateAngleDiff(latest.alpha, previous.alpha);
-    const angularVelocity = Math.abs(alphaDiff / dt);
-    
-    // 不安定判定
-    const isUnstable = angularVelocity > this.instabilityDetector.threshold ||
-                       Math.abs(beta) > 75 && Math.abs(beta) < 105;
-    
-    if (isUnstable) {
-      this.instabilityDetector.consecutiveUnstable++;
-    } else {
-      this.instabilityDetector.consecutiveUnstable = 0;
-    }
-    
-    // デバッグ情報
-    this.debugInfo.instabilityLevel = angularVelocity;
-    
-    // モード切り替え判定
-    this.updateInterpolationMode();
-  }
-  
-  /**
-   * 補間モード更新
-   */
-  updateInterpolationMode() {
-    const shouldUseQuaternion = 
-      this.instabilityDetector.consecutiveUnstable >= this.instabilityDetector.switchThreshold ||
-      (Math.abs(this.deviceBeta) > 70 && Math.abs(this.deviceBeta) < 110);
-    
-    // モード切り替え
-    if (shouldUseQuaternion && this.interpolationMode === 'euler') {
-      this.interpolationMode = 'quaternion';
-      this.debugInfo.quaternionActive = true;
-      this.debugInfo.switchCount++;
-      this.log('🔄 クォータニオンモードに切り替え');
-      
-      // 現在の姿勢をクォータニオンとして保存
-      this.currentQuaternion = SimpleQuaternion.fromEuler(
-        this.deviceAlpha, this.deviceBeta, this.deviceGamma
-      );
-    } else if (!shouldUseQuaternion && this.interpolationMode === 'quaternion') {
-      this.interpolationMode = 'euler';
-      this.debugInfo.quaternionActive = false;
-      this.log('🔄 オイラーモードに復帰');
-    }
-  }
-  
-  extractCompassHeading(event) {
+  updateQuaternion(event) {
+    // プラットフォーム別の方位値取得
+    let alpha;
     if (this.platform.hasWebkitCompass && event.webkitCompassHeading !== undefined) {
-      return event.webkitCompassHeading;
-    } else if (event.alpha !== null) {
-      return (360 - event.alpha) % 360;
-    }
-    return null;
-  }
-  
-  processCompassData(heading, beta) {
-    if (this.interpolationMode === 'quaternion') {
-      this.updateWithQuaternion(heading, beta);
+      alpha = event.webkitCompassHeading;
     } else {
-      if (this.mode === 'compass') {
-        this.updateCompassMode(heading, beta);
-      } else {
-        this.updateARMode(heading, beta);
-      }
+      alpha = event.alpha;
     }
-  }
-  
-  /**
-   * クォータニオン補間による更新
-   */
-  updateWithQuaternion(heading, beta) {
-    // 新しい姿勢のクォータニオン
-    this.targetQuaternion = SimpleQuaternion.fromEuler(
-      this.deviceAlpha, 
-      this.deviceBeta, 
-      this.deviceGamma
-    );
     
-    // スラープで補間
-    const t = 0.1; // 補間係数（0.1 = 10%新しい値）
-    this.currentQuaternion = SimpleQuaternion.slerp(
+    // 新しい姿勢のクォータニオン
+    this.targetQuaternion = Quaternion.fromEuler(alpha, event.beta, event.gamma);
+    
+    // スラープで補間（常に適用）
+    this.currentQuaternion = Quaternion.slerp(
       this.currentQuaternion,
       this.targetQuaternion,
-      t
+      this.smoothingFactor
     );
     
     // オイラー角に戻す
     const euler = this.currentQuaternion.toEuler();
     
-    // 方位を抽出
-    let stabilizedHeading;
+    // 方位を抽出（プラットフォーム別）
+    let heading;
     if (this.platform.hasWebkitCompass) {
-      stabilizedHeading = euler.alpha; // iOSは直接使用
+      heading = euler.alpha;  // iOSは直接使用
     } else {
-      stabilizedHeading = (360 - euler.alpha) % 360; // Androidは変換
+      heading = (360 - euler.alpha) % 360;  // Androidは変換
     }
     
-    this.smoothedHeading = stabilizedHeading;
-    this.confidence = 0.8; // クォータニオンモードでは信頼度を少し下げる
+    // 0-360の範囲に正規化
+    heading = (heading + 360) % 360;
     
-    // 安定時の値を保存
-    if (Math.abs(beta) < 60) {
-      this.lastStableHeading = this.smoothedHeading;
-      this.lastStableQuaternion = this.currentQuaternion;
-    }
+    this.smoothedHeading = heading;
+    this.currentHeading = heading;
     
-    this.notifyUpdate({
-      status: 'quaternion',
-      canUpdate: true,
-      confidence: this.confidence
-    });
+    // 更新通知
+    this.notifyUpdate();
   }
   
-  updateCompassMode(heading, beta) {
-    const stability = this.evaluateStability(beta, 'compass');
-    
-    if (stability.canUpdate) {
-      this.smoothedHeading = this.smoothAngle(
-        this.smoothedHeading,
-        heading,
-        stability.smoothingFactor
-      );
-      this.currentHeading = heading;
-      
-      if (stability.confidence > 0.7) {
-        this.lastStableHeading = this.smoothedHeading;
-      }
-      
-      this.confidence = stability.confidence;
-    } else {
-      this.smoothedHeading = this.lastStableHeading;
-      this.confidence = stability.confidence;
-    }
-    
-    this.notifyUpdate(stability);
-  }
-  
-  updateARMode(compassHeading, beta) {
-    if (!this.gyroCalibrated && this.gyroAvailable) {
-      this.gyroHeading = compassHeading;
-      this.gyroCalibrated = true;
-      this.log(`🎯 ジャイロ較正: ${Math.round(compassHeading)}°`);
-    }
-    
-    const stability = this.evaluateStability(beta, 'ar');
-    
-    if (stability.canCorrect && this.gyroCalibrated) {
-      const drift = this.calculateAngleDiff(compassHeading, this.gyroHeading);
-      const correctionRate = 0.005;
-      this.gyroHeading += drift * correctionRate;
-      this.debugInfo.driftCorrection = drift;
-    }
-    
-    if (!this.gyroAvailable) {
-      this.smoothedHeading = this.smoothAngle(
-        this.smoothedHeading,
-        compassHeading,
-        stability.smoothingFactor
-      );
-    } else {
-      this.smoothedHeading = this.gyroHeading;
-    }
-    
-    this.confidence = stability.confidence;
-    this.notifyUpdate(stability);
-  }
-  
-  updateGyroHeading(rotationRate, timestamp) {
-    if (!this.lastGyroTimestamp) {
-      this.lastGyroTimestamp = timestamp;
-      return;
-    }
-    
-    const dt = Math.min((timestamp - this.lastGyroTimestamp) / 1000, 0.1);
-    this.lastGyroTimestamp = timestamp;
-    
-    let deltaHeading = rotationRate.alpha || rotationRate.z || 0;
-    
-    if (this.platform.isIOS) {
-      deltaHeading = -deltaHeading;
-    }
-    
-    if (Math.abs(deltaHeading) > 10) {
-      deltaHeading = deltaHeading * (180 / Math.PI);
-    }
-    
-    this.gyroHeading += deltaHeading * dt;
-    this.gyroHeading = (this.gyroHeading + 360) % 360;
-  }
-  
-  evaluateStability(beta, mode) {
-    const absBeta = Math.abs(beta);
-    
-    if (mode === 'compass') {
-      if (absBeta < 45) {
-        return {
-          canUpdate: true,
-          canCorrect: true,
-          confidence: 1.0,
-          smoothingFactor: 0.08,
-          status: 'stable'
-        };
-      } else if (absBeta < 60) {
-        return {
-          canUpdate: true,
-          canCorrect: true,
-          confidence: 0.7,
-          smoothingFactor: 0.05,
-          status: 'semi-stable'
-        };
-      } else if (absBeta < 75) {
-        return {
-          canUpdate: true,
-          canCorrect: false,
-          confidence: 0.3,
-          smoothingFactor: 0.02,
-          status: 'unstable'
-        };
-      } else {
-        return {
-          canUpdate: false,
-          canCorrect: false,
-          confidence: 0.1,
-          smoothingFactor: 0,
-          status: 'frozen'
-        };
-      }
-    } else {
-      // ARモード
-      if (absBeta < 60) {
-        return {
-          canUpdate: true,
-          canCorrect: true,
-          confidence: 1.0,
-          smoothingFactor: 0.05,
-          status: 'stable'
-        };
-      } else if (absBeta < 110) {
-        return {
-          canUpdate: true,
-          canCorrect: false,
-          confidence: 0.7,
-          smoothingFactor: 0.01,
-          status: 'vertical'
-        };
-      } else {
-        return {
-          canUpdate: true,
-          canCorrect: false,
-          confidence: 0.5,
-          smoothingFactor: 0.01,
-          status: 'overhead'
-        };
-      }
-    }
-  }
-  
-  smoothAngle(current, target, factor) {
-    const diff = this.calculateAngleDiff(target, current);
-    return (current + diff * factor + 360) % 360;
-  }
-  
-  calculateAngleDiff(angle1, angle2) {
-    let diff = angle1 - angle2;
-    if (diff > 180) diff -= 360;
-    if (diff < -180) diff += 360;
-    return diff;
-  }
-  
-  setMode(mode) {
-    if (this.mode === mode) return;
-    
-    this.mode = mode;
-    this.gyroCalibrated = false;
-    this.lastGyroTimestamp = null;
-    this.log(`🔄 モード切替: ${mode}`);
-  }
-  
-  notifyUpdate(stability) {
+  notifyUpdate() {
+    this.debugInfo.updateCount++;
     this.debugInfo.lastUpdate = Date.now();
     
     if (this.onUpdate) {
       this.onUpdate({
         heading: this.smoothedHeading,
         rawHeading: this.currentHeading,
-        confidence: this.confidence,
-        status: stability.status,
+        confidence: 1.0,  // クォータニオンモードは常に高信頼度
+        status: 'quaternion',
         mode: this.mode,
-        interpolation: this.interpolationMode,
         platform: this.platform.name,
-        gyroAvailable: this.gyroAvailable,
-        beta: this.deviceBeta,
-        instability: this.debugInfo.instabilityLevel,
-        quaternionActive: this.debugInfo.quaternionActive
+        beta: this.deviceBeta
       });
+    }
+    
+    // グローバル変数更新（互換性）
+    if (typeof window !== 'undefined') {
+      window.currentHeading = this.smoothedHeading;
+      window.smoothedHeading = this.smoothedHeading;
+      if (typeof window.updateCompassDisplay === 'function') {
+        window.updateCompassDisplay();
+      }
     }
   }
   
-  log(message) {
-    if (typeof debugLog === 'function') {
-      debugLog(message);
-    } else {
-      console.log(`[OrientationManager] ${message}`);
-    }
+  setMode(mode) {
+    // 互換性のため残すが、常にクォータニオンモード
+    this.mode = mode;
+    // ARモードはより反応的に、コンパスモードは滑らかに
+    this.smoothingFactor = (mode === 'ar') ? 0.3 : 0.15;
+    this.log(`🔄 モード: ${mode} (Quaternion, smoothing: ${this.smoothingFactor})`);
   }
   
   getHeading() {
@@ -586,15 +286,22 @@ class OrientationManager {
   getDebugInfo() {
     return {
       heading: Math.round(this.smoothedHeading),
-      confidence: Math.round(this.confidence * 100) + '%',
-      mode: this.mode,
-      interpolation: this.interpolationMode,
-      gyro: this.gyroAvailable ? 'OK' : 'NG',
+      confidence: '100%',
+      mode: 'Quaternion',
       platform: this.platform.name,
-      instability: Math.round(this.debugInfo.instabilityLevel),
-      quaternion: this.debugInfo.quaternionActive ? 'ON' : 'OFF',
-      switches: this.debugInfo.switchCount
+      updates: this.debugInfo.updateCount,
+      alpha: Math.round(this.deviceAlpha),
+      beta: Math.round(this.deviceBeta),
+      gamma: Math.round(this.deviceGamma)
     };
+  }
+  
+  log(message) {
+    if (typeof debugLog === 'function') {
+      debugLog(message);
+    } else {
+      console.log(`[OrientationManager] ${message}`);
+    }
   }
 }
 

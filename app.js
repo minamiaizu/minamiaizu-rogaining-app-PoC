@@ -887,8 +887,8 @@ async function startAR(){
     video.srcObject = ar.stream;
     await video.play();
     resizeARCanvas();
-    startOrientation();
-    startDeviceMotion();
+    // startOrientationは一度だけ実行済みなので不要
+    // startDeviceMotionは削除（OrientationManagerが処理）
     startARTimer();
     ar.lastFrameTime = performance.now();
     requestAnimationFrame(arLoop);
