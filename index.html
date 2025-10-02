@@ -19,7 +19,6 @@
 
   <!-- App CSS -->
   <link rel="stylesheet" href="styles.css">
-
 </head>
 <body>
   <!-- Install banner -->
@@ -30,6 +29,20 @@
         <button id="install-button" type="button">インストール</button>
         <button class="close-btn" id="close-install-banner" type="button" aria-label="閉じる">×</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Calibration UI (新規) -->
+  <div id="calibration-prompt" class="calibration-ui" hidden>
+    <div class="calibration-content">
+      <h3>🧭 方位の設定</h3>
+      <p>より正確な方位表示のため、デバイスを<strong>北</strong>に向けてボタンをタップしてください。</p>
+      <button id="calibrate-button" class="button button-primary">
+        📍 北向きに設定
+      </button>
+      <button id="close-calibration" class="button" onclick="document.getElementById('calibration-prompt').hidden=true">
+        後で設定
+      </button>
     </div>
   </div>
 
@@ -99,7 +112,6 @@
       <!-- ソナー円形ディスプレイ -->
       <div id="sonar-container">
         <canvas id="sonar-canvas"></canvas>
-        <!-- 方位ラベルはCanvasで描画 -->
       </div>
 
       <!-- 標高付き距離バー -->
@@ -255,11 +267,18 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- Orientation Manager -->
-  <script src="orientation-manager.js"></script>
   <!-- Debug Manager -->
   <script src="debug-manager.js"></script>
 
+  <!-- Managers -->
+  <script src="orientation-manager.js"></script>
+  <script src="state-manager.js"></script>
+  <script src="geo-manager.js"></script>
+
+  <!-- Views -->
+  <script src="view-compass.js"></script>
+  <script src="view-sonar.js"></script>
+  <script src="view-ar.js"></script>
 
   <!-- App JS -->
   <script src="app.js"></script>

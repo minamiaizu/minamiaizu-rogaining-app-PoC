@@ -1,0 +1,86 @@
+{
+  "version": "1.0",
+  "region": "会津田島",
+  "checkpoints": [
+    {
+      "id": 1,
+      "name": "会津田島駅",
+      "lat": 37.20329853,
+      "lng": 139.77424063,
+      "points": 10,
+      "elevation": 650,
+      "description": "スタート地点となる駅",
+      "category": "transportation"
+    },
+    {
+      "id": 5,
+      "name": "田島郵便局",
+      "lat": 37.20304087405265,
+      "lng": 139.77286576693686,
+      "points": 15,
+      "elevation": 660,
+      "description": "中心部の郵便局",
+      "category": "facility"
+    },
+    {
+      "id": 3,
+      "name": "南会津町役場",
+      "lat": 37.200710699416376,
+      "lng": 139.77372578165173,
+      "points": 20,
+      "elevation": 655,
+      "description": "町の中心施設",
+      "category": "government"
+    },
+    {
+      "id": 4,
+      "name": "旧会津田島祇園会館",
+      "lat": 37.205534721685595,
+      "lng": 139.77515747555398,
+      "points": 25,
+      "elevation": 658,
+      "description": "歴史的建造物",
+      "category": "cultural"
+    },
+    {
+      "id": 7,
+      "name": "丸山公園",
+      "lat": 37.20270904301629,
+      "lng": 139.76594854526823,
+      "points": 30,
+      "elevation": 670,
+      "description": "広い公園",
+      "category": "park"
+    },
+    {
+      "id": 8,
+      "name": "びわのかげ運動公園芝生広場",
+      "lat": 37.205439950626705,
+      "lng": 139.7619837579642,
+      "points": 35,
+      "elevation": 672,
+      "description": "運動施設を備えた公園",
+      "category": "park"
+    },
+    {
+      "id": 2,
+      "name": "びわのかげ公園",
+      "lat": 37.19933810720546,
+      "lng": 139.76057080171373,
+      "points": 40,
+      "elevation": 671,
+      "description": "自然豊かな公園",
+      "category": "park"
+    },
+    {
+      "id": 6,
+      "name": "たじま公園",
+      "lat": 37.211615192715506,
+      "lng": 139.78760153630893,
+      "points": 45,
+      "elevation": 690,
+      "description": "高台にある公園",
+      "category": "park"
+    }
+  ]
+}
