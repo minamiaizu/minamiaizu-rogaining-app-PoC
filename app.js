@@ -504,9 +504,6 @@ function setHeading(deg){
   // フォールバック（OrientationManagerが初期化されていない場合）
   currentHeading = (deg+360)%360;
   smoothedHeading = currentHeading; // フォールバック時は平滑化なし
-  updateCompassDisplay();
-}
-
 /* ======== Device orientation ======== */
 function startOrientation() {
   if (!orientationManager) {
@@ -549,7 +546,6 @@ function startOrientation() {
           nearestInfo.style.backgroundColor = 'rgba(255, 100, 0, 0.7)';
         }
       }
-    };
       
       // デバッグ用: センサーデータを更新
       if (typeof debugOverlay !== "undefined" && debugOverlay) {
@@ -561,6 +557,7 @@ function startOrientation() {
           webkitCompassAccuracy: parseFloat(data.accuracy) || -1
         };
       }
+    };
     
     // 初期化
     orientationManager.init().then(success => {
