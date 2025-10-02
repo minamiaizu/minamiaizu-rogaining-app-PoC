@@ -65,6 +65,7 @@ let rotationTotal = 0;
 let activeTooltip = null;
 let tooltipTimeout = null;
 let devicePitch = 0; // デバイスの上下傾き角（度）
+let orientationManager = null; // OrientationManager インスタンス
 let ar = {
   stream: null,
   ctx: null,
@@ -480,13 +481,18 @@ function drawCompassTicks(){
   }
 }
 function setHeading(deg){
+  // OrientationManager経由で処理される
+  if (orientationManager) {
+    // 手動設定は無視（OrientationManagerが管理）
+    return;
+  }
+  
+  // フォールバック（OrientationManagerが初期化されていない場合）
   currentHeading = (deg+360)%360;
   
   // 平滑化フィルタ（指数移動平均）を適用
-  // alpha = 0.05 → 95%過去、5%現在（非常に滑らか、遅延やや大）
-  // alpha = 0.1 → 90%過去、10%現在（滑らか、遅延小）
-  // alpha = 0.2 → 80%過去、20%現在（バランス）
-  const alpha = 0.08; // 滑らかさ重視
+  // alpha = 0.08 → 92%過去、8%現在（滑らか）
+  const alpha = 0.08;
   
   // 角度の差分を計算（最短経路）
   let diff = currentHeading - smoothedHeading;
@@ -500,22 +506,57 @@ function setHeading(deg){
 }
 
 /* ======== Device orientation ======== */
-function startOrientation(){
-  const start = ()=>{
-    window.addEventListener('deviceorientation', (e)=>{
-      const alpha = e.webkitCompassHeading != null ? e.webkitCompassHeading : e.alpha;
-      if (alpha == null) return;
-      const heading = e.webkitCompassHeading != null ? alpha : 360 - alpha;
-      setHeading(heading);
+function startOrientation() {
+  if (!orientationManager) {
+    orientationManager = new OrientationManager();
+    
+    // コールバック設定
+    orientationManager.onUpdate = (data) => {
+      // 既存のグローバル変数を更新
+      currentHeading = data.heading;
+      smoothedHeading = data.heading;
+      
+      // デバッグ表示（beta値の状態）
+      if (data.beta !== undefined) {
+        devicePitch = data.beta;
+        updatePitchIndicator();
+      }
+      
+      // コンパス表示更新
+      updateCompassDisplay();
+      
+      // 信頼度に応じたUI調整
+      if (currentView === 'compass' && data.confidence < 0.3) {
+        const headingDisplay = document.getElementById('heading-display');
+        if (headingDisplay) {
+          if (data.status === 'frozen') {
+            headingDisplay.textContent = '方位: 測定中...';
+            headingDisplay.style.opacity = '0.5';
+          } else {
+            headingDisplay.textContent = `方位: ${Math.round(data.heading)}°`;
+            headingDisplay.style.opacity = String(data.confidence);
+          }
+        }
+      }
+      
+      // ARモードでの信頼度表示
+      if (currentView === 'ar' && data.mode === 'ar') {
+        // ARビューでジャイロ状態を表示する処理
+        const nearestInfo = document.getElementById('nearest-cp-info');
+        if (nearestInfo && data.gyroAvailable === false) {
+          nearestInfo.style.backgroundColor = 'rgba(255, 100, 0, 0.7)';
+        }
+      }
+    };
+    
+    // 初期化
+    orientationManager.init().then(success => {
+      if (success) {
+        debugLog('✅ 方位システム初期化成功');
+      } else {
+        debugLog('⚠️ 方位システム初期化に一部失敗');
+      }
     });
-  };
-  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
-    DeviceOrientationEvent.requestPermission().then(state=>{
-      if (state==='granted'){ start(); }
-      else debugLog('方位センサー許可が得られませんでした');
-    }).catch(()=>debugLog('方位センサー要求に失敗'));
-  } else {
-    start();
   }
 }
 
@@ -724,8 +765,20 @@ function switchView(view){
   if (view==='compass'){ 
     updateCompassContainerSize(); 
     setTimeout(updateCompassDisplay, 100);
+    // コンパスモードに切り替え
+    if (orientationManager) {
+      orientationManager.setMode('compass');
+    }
   }
-  if (view==='ar'){ startAR(); } else { stopAR(); }
+  if (view==='ar'){ 
+    startAR(); 
+    // ARモードに切り替え
+    if (orientationManager) {
+      orientationManager.setMode('ar');
+    }
+  } else { 
+    stopAR(); 
+  }
 }
 document.getElementById('tab-map')?.addEventListener('click', ()=>switchView('map'));
 document.getElementById('tab-compass')?.addEventListener('click', ()=>switchView('compass'));
@@ -1045,12 +1098,28 @@ function arLoop(currentTime){
   
   // デバッグ情報を画面に表示
   ctx.fillStyle = 'rgba(0,0,0,0.8)';
-  ctx.fillRect(10, 10, 300, 200);
+  ctx.fillRect(10, 10, 320, 250);
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'left';
   
   let y = 25;
+  
+  // OrientationManager情報を追加
+  if (orientationManager) {
+    const debugInfo = orientationManager.getDebugInfo();
+    ctx.fillText(`Platform: ${debugInfo.platform}`, 15, y); y += 15;
+    ctx.fillText(`Mode: ${debugInfo.mode}`, 15, y); y += 15;
+    ctx.fillText(`Confidence: ${debugInfo.confidence}`, 15, y); y += 15;
+    ctx.fillText(`Gyro: ${debugInfo.gyro}`, 15, y); y += 15;
+    if (debugInfo.gyro === 'OK' && debugInfo.mode === 'ar') {
+      ctx.fillStyle = '#48bb78';
+      ctx.fillText(`Drift corr: ${Math.round(debugInfo.driftCorrection || 0)}°`, 15, y);
+      ctx.fillStyle = '#fff';
+      y += 15;
+    }
+  }
+  
   ctx.fillText(`Heading(raw): ${Math.round(currentHeading)}°`, 15, y); y += 15;
   ctx.fillText(`Heading(smooth): ${Math.round(smoothedHeading)}°`, 15, y); y += 15;
   ctx.fillText(`Pitch(raw): ${Math.round(devicePitch)}°`, 15, y); y += 15;
