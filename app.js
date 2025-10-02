@@ -504,6 +504,9 @@ function setHeading(deg){
   // フォールバック（OrientationManagerが初期化されていない場合）
   currentHeading = (deg+360)%360;
   smoothedHeading = currentHeading; // フォールバック時は平滑化なし
+  updateCompassDisplay();
+}
+
 /* ======== Device orientation ======== */
 function startOrientation() {
   if (!orientationManager) {
@@ -569,6 +572,7 @@ function startOrientation() {
     });
   }
 }
+
 
 /* ======== Device motion (傾き検出) ======== */
 function startDeviceMotion(){
@@ -2110,7 +2114,7 @@ document.addEventListener('click', (e) => {
   updateTrackingButton();
   updateCompassContainerSize();
   startOrientation();
-  startDeviceMotion(); // ピッチ角検出を開始（デバッグ・センサーデータ収集用）
+  startDeviceMotion(); // ピッチ角検出を開始
   startTimer();
   if (trackingEnabled) {
     startTracking();
