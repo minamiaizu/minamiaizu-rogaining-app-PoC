@@ -678,14 +678,15 @@ function updateCheckpointMarkers(){
     const d = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
     const color = getDistanceColor(d, minDistance, maxDistance);
     const b = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    const relativeBearing = (b - currentHeading + 360) % 360;
     
     const marker = document.createElement('div');
     marker.className = 'checkpoint-marker';
     marker.textContent = cp.points;
     marker.style.background = color;
     
-    // マーカーコンテナは回転しないため、絶対方位を使用
-    const angle = (b - 90) * Math.PI / 180;
+    // マーカーコンテナは回転しないため、相対方位を使用
+    const angle = (relativeBearing - 90) * Math.PI / 180;
     const x = centerPoint + radius * Math.cos(angle);
     const y = centerPoint + radius * Math.sin(angle);
     
