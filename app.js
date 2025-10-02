@@ -800,42 +800,45 @@ async function showCameraSelector(){
   const cameras = await getCameraDevices();
   if (cameras.length <= 1) return null;
   
-  const modal = document.createElement('div');
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:10000;display:flex;align-items:center;justify-content:center;';
-  
-  const dialog = document.createElement('div');
-  dialog.style.cssText = 'background:#fff;padding:20px;border-radius:12px;max-width:400px;width:90%;';
-  
-  const title = document.createElement('h3');
-  title.textContent = 'カメラを選択';
-  title.style.marginBottom = '15px';
-  dialog.appendChild(title);
-  
-  const list = document.createElement('div');
-  cameras.forEach((cam, idx) => {
-    const btn = document.createElement('button');
-    btn.textContent = cam.label || `カメラ ${idx+1}`;
-    btn.style.cssText = 'display:block;width:100%;padding:12px;margin:8px 0;background:#667eea;color:#fff;border:none;border-radius:8px;cursor:pointer;';
-    btn.onclick = ()=>{
-      ar.selectedCameraId = cam.deviceId;
-      saveToLocalStorage();
+  return new Promise((resolve, reject) => {
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:10000;display:flex;align-items:center;justify-content:center;';
+    
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background:#fff;padding:20px;border-radius:12px;max-width:400px;width:90%;';
+    
+    const title = document.createElement('h3');
+    title.textContent = 'カメラを選択';
+    title.style.marginBottom = '15px';
+    dialog.appendChild(title);
+    
+    const list = document.createElement('div');
+    cameras.forEach((cam, idx) => {
+      const btn = document.createElement('button');
+      btn.textContent = cam.label || `カメラ ${idx+1}`;
+      btn.style.cssText = 'display:block;width:100%;padding:12px;margin:8px 0;background:#667eea;color:#fff;border:none;border-radius:8px;cursor:pointer;';
+      btn.onclick = ()=>{
+        ar.selectedCameraId = cam.deviceId;
+        saveToLocalStorage();
+        document.body.removeChild(modal);
+        resolve(cam.deviceId); // Promiseを解決
+      };
+      list.appendChild(btn);
+    });
+    dialog.appendChild(list);
+    
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'キャンセル';
+    cancelBtn.style.cssText = 'display:block;width:100%;padding:12px;margin:8px 0;background:#cbd5e0;color:#2d3748;border:none;border-radius:8px;cursor:pointer;';
+    cancelBtn.onclick = ()=>{
       document.body.removeChild(modal);
-      startAR();
+      resolve(null); // キャンセル時もPromiseを解決
     };
-    list.appendChild(btn);
+    dialog.appendChild(cancelBtn);
+    
+    modal.appendChild(dialog);
+    document.body.appendChild(modal);
   });
-  dialog.appendChild(list);
-  
-  const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'キャンセル';
-  cancelBtn.style.cssText = 'display:block;width:100%;padding:12px;margin:8px 0;background:#cbd5e0;color:#2d3748;border:none;border-radius:8px;cursor:pointer;';
-  cancelBtn.onclick = ()=>document.body.removeChild(modal);
-  dialog.appendChild(cancelBtn);
-  
-  modal.appendChild(dialog);
-  document.body.appendChild(modal);
-  
-  return new Promise(resolve => {});
 }
 
 /* ======== AR helper functions ======== */
@@ -894,7 +897,15 @@ async function startAR(){
     debugLog('カメラ起動に失敗: ' + e.message);
     const cameras = await getCameraDevices();
     if (cameras.length > 1){
-      await showCameraSelector();
+      const selectedCamera = await showCameraSelector();
+      if (selectedCamera) {
+        // カメラが選択された場合、再度startARを呼び出す
+        startAR();
+      } else {
+        // キャンセルされた場合、コンパスビューに戻る
+        debugLog('カメラ選択がキャンセルされました');
+        switchView('compass');
+      }
     } else {
       alert('カメラの使用許可が必要です');
       switchView('compass');

@@ -1,5 +1,5 @@
 /**
- * OrientationManager Extended - クォータニオン補間モード付き
+ * OrientationManager - クォータニオン補間モード付き
  * 暴れ検出時に動的にクォータニオンモードへ切り替え
  */
 
@@ -108,7 +108,7 @@ class SimpleQuaternion {
   }
 }
 
-class OrientationManagerExtended {
+class OrientationManager {
   constructor() {
     // 基本状態（既存）
     this.currentHeading = 0;
@@ -183,7 +183,7 @@ class OrientationManagerExtended {
       this.setupOrientationListener();
       this.setupMotionListener();
       
-      this.log('✅ OrientationManager Extended 初期化完了');
+      this.log('✅ OrientationManager 初期化完了');
       return true;
     } catch (error) {
       this.log('❌ 初期化エラー: ' + error.message);
@@ -575,7 +575,7 @@ class OrientationManagerExtended {
     if (typeof debugLog === 'function') {
       debugLog(message);
     } else {
-      console.log(`[OrientationManagerExt] ${message}`);
+      console.log(`[OrientationManager] ${message}`);
     }
   }
   
@@ -600,5 +600,5 @@ class OrientationManagerExtended {
 
 // エクスポート
 if (typeof window !== 'undefined') {
-  window.OrientationManagerExtended = OrientationManagerExtended;
+  window.OrientationManager = OrientationManager;
 }
