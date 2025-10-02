@@ -34,7 +34,7 @@ document.getElementById('close-install-banner')?.addEventListener('click', () =>
 let currentView = 'map';
 let timerInterval = null;
 let isOnline = navigator.onLine;
-let arCapable = false; // AR機能の可用性
+let arCapable = false;
 
 /* ======== マネージャーインスタンス ======== */
 let stateMgr, geoMgr, compassView, sonarView, arView, orientationMgr;
@@ -74,14 +74,19 @@ async function init() {
   );
   geoMgr.addCheckpointMarkers(stateMgr.checkpoints, stateMgr.completedIds);
   
-  // 7. ビュー初期化
-  compassView = new CompassView('compass-view');
+  // 7. ビュー初期化（マネージャーを注入）
+  compassView = new CompassView({
+    containerId: 'compass-view',
+    geoMgr: geoMgr
+  });
   compassView.init();
   
   const sonarConfig = stateMgr.config?.sonar || {};
   sonarView = new SonarView({
     range: sonarConfig.defaultRange || 1000,
-    audioEnabled: sonarConfig.audioEnabled || false
+    audioEnabled: sonarConfig.audioEnabled || false,
+    stateMgr: stateMgr,
+    geoMgr: geoMgr
   });
   sonarView.init();
   
@@ -89,11 +94,13 @@ async function init() {
     const arConfig = stateMgr.config?.ar || {};
     arView = new ARView({
       range: arConfig.defaultRange || 1000,
-      timerDuration: arConfig.timeLimitSeconds || 300
+      timerDuration: arConfig.timeLimitSeconds || 300,
+      stateMgr: stateMgr,
+      geoMgr: geoMgr,
+      orientationMgr: orientationMgr
     });
     debugLog('✅ ARビュー初期化');
   } else {
-    // AR非対応
     const arTab = document.getElementById('tab-ar');
     if (arTab) {
       arTab.style.opacity = '0.4';
@@ -118,7 +125,6 @@ async function init() {
 
 /* ======== AR可用性チェック ======== */
 async function checkARCapability() {
-  // カメラ権限チェック
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const hasCamera = devices.some(d => d.kind === 'videoinput');
@@ -131,12 +137,10 @@ async function checkARCapability() {
     return false;
   }
   
-  // 方位センサーチェック（OrientationManagerのモードで判定）
   const mode = orientationMgr.getMode();
   if (!mode || mode === 'relative') {
-    debugLog('⚠️ AR推奨センサーなし（相対モード）');
-    // 相対モードでもARは使えるが、精度が低い
-    return true; // キャリブレーション前提で許可
+    debugLog('⚠️ AR推奨センサーなし(相対モード)');
+    return true;
   }
   
   return true;
@@ -146,16 +150,12 @@ async function checkARCapability() {
 function handleOrientationUpdate(data) {
   const { heading, pitch } = data;
   
-  // グローバル変数更新
-  window.smoothedHeading = heading;
+  // ピッチインジケーター更新用（AR専用の一時的なグローバル変数）
   window.devicePitch = pitch;
-  
-  // ピッチインジケーター更新
   if (typeof window.updatePitchIndicator === 'function') {
     window.updatePitchIndicator();
   }
   
-  // 現在のビューに応じて更新
   const currentPosition = stateMgr.currentPosition;
   if (!currentPosition) return;
   
@@ -165,9 +165,9 @@ function handleOrientationUpdate(data) {
       currentPosition, heading, stateMgr.checkpoints, stateMgr.completedIds
     );
   } else if (currentView === 'sonar') {
-    sonarView.update(currentPosition, heading, stateMgr.checkpoints, stateMgr.completedIds);
+    sonarView.update(currentPosition, heading);
   } else if (currentView === 'ar' && arView) {
-    arView.update(currentPosition, heading, pitch, stateMgr.checkpoints, stateMgr.completedIds);
+    arView.update(currentPosition, heading, pitch);
     arView.updateSensorMode(data.mode);
   }
 }
@@ -175,10 +175,8 @@ function handleOrientationUpdate(data) {
 function handleOrientationModeChange(data) {
   debugLog(`🔄 センサーモード変更: ${data.mode}`);
   
-  // キャリブレーションUIの表示/非表示
   checkCalibrationUI();
   
-  // 通知表示（オプション）
   if (data.mode === 'relative' && !data.isCalibrated) {
     showNotification({
       type: 'warning',
@@ -193,7 +191,6 @@ function checkCalibrationUI() {
   const calibrationPrompt = document.getElementById('calibration-prompt');
   if (!calibrationPrompt) return;
   
-  // 相対モードでキャリブレーション未実施の場合のみ表示
   if (orientationMgr.needsCalibration()) {
     calibrationPrompt.hidden = false;
   } else {
@@ -218,34 +215,24 @@ function handleCalibrate() {
 
 /* ======== イベントリスナー ======== */
 function setupEventListeners() {
-  // 位置情報取得
   document.getElementById('get-location-btn')?.addEventListener('click', getCurrentLocation);
   
-  // 写真撮影
   document.getElementById('photo-btn')?.addEventListener('click', () => {
     document.getElementById('photo-input').click();
   });
   document.getElementById('photo-input')?.addEventListener('change', handlePhoto);
   
-  // チェックポイント確認
   document.getElementById('check-button')?.addEventListener('click', checkNearby);
-  
-  // トラッキング
   document.getElementById('tracking-button')?.addEventListener('click', toggleTracking);
-  
-  // データリセット
   document.getElementById('clear-button')?.addEventListener('click', clearData);
   
-  // タブ切り替え
   document.getElementById('tab-map')?.addEventListener('click', () => switchView('map'));
   document.getElementById('tab-compass')?.addEventListener('click', () => switchView('compass'));
   document.getElementById('tab-sonar')?.addEventListener('click', () => switchView('sonar'));
   document.getElementById('tab-ar')?.addEventListener('click', () => switchView('ar'));
   
-  // キャリブレーションボタン
   document.getElementById('calibrate-button')?.addEventListener('click', handleCalibrate);
   
-  // キャリブレーションクリア（デバッグ用）
   document.getElementById('clear-calibration-button')?.addEventListener('click', () => {
     if (confirm('キャリブレーションをリセットしますか?')) {
       orientationMgr.clearCalibration();
@@ -253,12 +240,10 @@ function setupEventListeners() {
     }
   });
   
-  // 写真モーダル閉じる
   document.getElementById('photo-close')?.addEventListener('click', () => {
     document.getElementById('photo-modal').hidden = true;
   });
   
-  // ソナーレンジボタン
   document.querySelectorAll('#sonar-view .range-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('#sonar-view .range-btn').forEach(b => b.classList.remove('active'));
@@ -270,7 +255,6 @@ function setupEventListeners() {
     });
   });
   
-  // ARレンジボタン
   document.querySelectorAll('.ar-range-selector .range-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.ar-range-selector .range-btn').forEach(b => b.classList.remove('active'));
@@ -282,7 +266,6 @@ function setupEventListeners() {
     });
   });
   
-  // FOVボタン
   document.querySelectorAll('.fov-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.fov-btn').forEach(b => b.classList.remove('active'));
@@ -294,14 +277,12 @@ function setupEventListeners() {
     });
   });
   
-  // リサイズイベント
   window.addEventListener('resize', () => {
     if (compassView) compassView.updateSize();
     if (currentView === 'ar' && arView) arView._resizeCanvas();
     if (currentView === 'sonar') sonarView.resizeCanvas();
   });
   
-  // ツールチップを閉じる
   document.addEventListener('click', (e) => {
     if (compassView && !e.target.classList.contains('checkpoint-marker') && 
         !e.target.classList.contains('distance-marker')) {
@@ -490,24 +471,15 @@ function startTimer() {
 
 /* ======== UI更新 ======== */
 function updateUI() {
-  // 得点更新
   const totalScore = stateMgr.getTotalScore();
   document.getElementById('score').textContent = `得点: ${totalScore}点`;
   
-  // 写真数
   document.getElementById('photo-count').textContent = `${stateMgr.photos.length}枚`;
-  
-  // 軌跡ポイント数
   document.getElementById('track-count').textContent = `${stateMgr.trackPoints.length}個`;
-  
-  // クリア数
   document.getElementById('cleared-count').textContent = 
     `${stateMgr.completedIds.size} / ${stateMgr.checkpoints.length}`;
   
-  // チェックポイントリスト
   renderCheckpoints();
-  
-  // 写真ギャラリー
   renderPhotoGallery();
 }
 
@@ -589,13 +561,11 @@ function openPhotoModal(src) {
 
 /* ======== ビュー切替 ======== */
 function switchView(view) {
-  // AR機能チェック
   if (view === 'ar' && !arCapable) {
     alert('AR機能は利用できません。\n\n原因:\n・カメラがない\n・センサーが非対応\n・権限が拒否されている');
     return;
   }
   
-  // 相対モード+未キャリブレーションの警告
   if ((view === 'compass' || view === 'sonar' || view === 'ar') && orientationMgr.needsCalibration()) {
     const proceed = confirm(
       '⚠️ キャリブレーションが未実施です。\n\n' +
@@ -608,18 +578,15 @@ function switchView(view) {
   
   currentView = view;
   
-  // ビュー表示切替
   document.getElementById('map').hidden = view !== 'map';
   document.getElementById('compass-view').hidden = view !== 'compass';
   document.getElementById('sonar-view').hidden = view !== 'sonar';
   document.getElementById('ar-view').hidden = view !== 'ar';
   
-  // タブアクティブ切替
   document.querySelectorAll('#tabs .tab').forEach(tab => {
     tab.classList.toggle('active', tab.dataset.view === view);
   });
   
-  // ビュー別処理
   if (view === 'compass') {
     orientationMgr?.setMode('compass');
     compassView.show();
@@ -708,13 +675,7 @@ function showNotification({ type = 'info', message, duration = 3000 }) {
   }, duration);
 }
 
-/* ======== グローバル関数（互換性） ======== */
-window.checkpoints = () => stateMgr.checkpoints;
-window.completedCheckpoints = () => stateMgr.completedIds;
-window.currentPosition = () => stateMgr.currentPosition;
-window.distance = geoMgr?.distance.bind(geoMgr);
-window.bearing = geoMgr?.bearing.bind(geoMgr);
-window.calculateETA = geoMgr?.calculateETA.bind(geoMgr);
+/* ======== グローバル関数(switchViewのみ) ======== */
 window.switchView = switchView;
 
 /* ======== 初期化実行 ======== */
@@ -722,4 +683,3 @@ init().catch(error => {
   debugLog(`❌ 初期化エラー: ${error.message}`);
   alert('アプリケーションの初期化に失敗しました。');
 });
-
