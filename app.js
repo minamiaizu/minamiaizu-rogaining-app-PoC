@@ -2113,6 +2113,7 @@ document.addEventListener('click', (e) => {
   updateTrackingButton();
   updateCompassContainerSize();
   startOrientation();
+  startDeviceMotion(); // ピッチ角検出を開始（デバッグ・センサーデータ収集用）
   startTimer();
   if (trackingEnabled) {
     startTracking();

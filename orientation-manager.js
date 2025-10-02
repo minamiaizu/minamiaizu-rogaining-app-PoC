@@ -53,15 +53,24 @@ class OrientationManager {
           const motionPermission = await DeviceMotionEvent.requestPermission();
           this.log(`📱 iOS Motion権限: ${motionPermission}`);
         }
+      } else {
+        // Android等では権限リクエスト不要
+        this.log('📱 Android/その他のデバイス: 権限リクエストをスキップ');
       }
       
       // イベントリスナー設定
       this.setupListeners();
       
-      this.log('✅ OrientationManager 初期化完了' + (this.isIOS ? ' (iOS)' : ''));
+      this.log('✅ OrientationManager 初期化完了' + (this.isIOS ? ' (iOS)' : ' (Android/その他)'));
       return true;
     } catch (error) {
       this.log('❌ 初期化エラー: ' + error.message);
+      // Androidではエラーでもリスナーを設定してみる
+      if (!this.isIOS) {
+        this.log('🔄 Android: エラーを無視してリスナーを設定');
+        this.setupListeners();
+        return true;
+      }
       return false;
     }
   }
