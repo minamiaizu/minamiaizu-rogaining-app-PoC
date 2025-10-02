@@ -264,7 +264,7 @@ class OrientationManager {
       this.deviceOrientationListener = (e) => {
         if (e.alpha === null) return;
         
-        const rawHeading = (360 - e.alpha) % 360;
+        const rawHeading = e.alpha;
         
         if (e.absolute === true) {
           // 絶対モード（磁北基準）
