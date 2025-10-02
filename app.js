@@ -678,14 +678,14 @@ function updateCheckpointMarkers(){
     const d = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
     const color = getDistanceColor(d, minDistance, maxDistance);
     const b = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
-    const relativeBearing = (b - currentHeading + 360) % 360;
     
     const marker = document.createElement('div');
     marker.className = 'checkpoint-marker';
     marker.textContent = cp.points;
     marker.style.background = color;
     
-    const angle = (relativeBearing - 90) * Math.PI / 180;
+    // マーカーコンテナは回転しないため、絶対方位を使用
+    const angle = (b - 90) * Math.PI / 180;
     const x = centerPoint + radius * Math.cos(angle);
     const y = centerPoint + radius * Math.sin(angle);
     
@@ -1012,42 +1012,6 @@ function drawSonarDisplay() {
   ctx.stroke();
   
   // Canvasの状態を復元
-  ctx.restore();
-  
-  // 方位ラベルは回転させずに固定位置に描画
-  drawCardinalLabels(ctx, cx, cy, radius);
-}
-
-function drawCardinalLabels(ctx, cx, cy, radius) {
-  // 方位ラベルを画面固定位置に描画（回転の影響を受けない）
-  ctx.save();
-  
-  ctx.fillStyle = '#2d3748';
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-  ctx.lineWidth = 3;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  
-  // 北（上）- 赤色で強調
-  ctx.font = 'bold 32px Georgia, serif';
-  ctx.strokeText('N', cx, cy - radius + 20);
-  ctx.fillStyle = '#c53030';
-  ctx.fillText('N', cx, cy - radius + 20);
-  
-  // 東（右）
-  ctx.font = 'bold 22px Georgia, serif';
-  ctx.fillStyle = '#2d3748';
-  ctx.strokeText('E', cx + radius - 20, cy);
-  ctx.fillText('E', cx + radius - 20, cy);
-  
-  // 南（下）
-  ctx.strokeText('S', cx, cy + radius - 20);
-  ctx.fillText('S', cx, cy + radius - 20);
-  
-  // 西（左）
-  ctx.strokeText('W', cx - radius + 20, cy);
-  ctx.fillText('W', cx - radius + 20, cy);
-  
   ctx.restore();
 }
 
