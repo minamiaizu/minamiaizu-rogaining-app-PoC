@@ -105,7 +105,7 @@ let sonar = {
   size: 400,
   range: 1000,
   scanAngle: 0,           // スキャンラインの現在角度（0-360度）
-  scanSpeed: 120,         // 度/秒 (360度/3秒 = 120度/秒)
+  scanSpeed: 72,          // 度/秒 (360度/5秒 = 72度/秒)
   lastUpdateTime: 0,
   audioEnabled: false,
   audioContext: null,
@@ -873,11 +873,11 @@ function drawSonarDisplay() {
   // 背景クリア
   ctx.clearRect(0, 0, w, h);
   
-  // 背景グラデーション
+  // 背景グラデーション（明るいポップなグリーン - ドラゴンレーダー風）
   const bgGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-  bgGrad.addColorStop(0, 'rgba(66, 153, 225, 0.15)');
-  bgGrad.addColorStop(0.5, 'rgba(49, 130, 206, 0.08)');
-  bgGrad.addColorStop(1, 'rgba(26, 32, 44, 0.05)');
+  bgGrad.addColorStop(0, '#a8e6cf');  // 明るいミントグリーン
+  bgGrad.addColorStop(0.5, '#7ed6a8'); // ポップなグリーン
+  bgGrad.addColorStop(1, '#6bc99b');   // 少し濃いグリーン
   ctx.fillStyle = bgGrad;
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -892,20 +892,20 @@ function drawSonarDisplay() {
   // チェックポイント
   drawSonarCheckpoints(ctx, cx, cy, radius);
   
-  // 中心点
-  ctx.fillStyle = 'rgba(72, 187, 120, 0.8)';
+  // 中心点（ピンク色 - ドラゴンレーダー風の現在地マーカー）
+  ctx.fillStyle = '#ff6b9d';
   ctx.beginPath();
-  ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+  ctx.arc(cx, cy, 10, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 3;
   ctx.stroke();
 }
 
 function drawDistanceRings(ctx, cx, cy, radius) {
   const rings = 4;
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(45, 55, 72, 0.4)'; // 濃いグレー
+  ctx.lineWidth = 1.5;
   
   for (let i = 1; i <= rings; i++) {
     const r = (radius / rings) * i;
@@ -914,13 +914,13 @@ function drawDistanceRings(ctx, cx, cy, radius) {
     ctx.stroke();
     
     // 距離ラベル
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.font = '11px system-ui';
+    ctx.fillStyle = 'rgba(45, 55, 72, 0.7)';
+    ctx.font = 'bold 12px system-ui';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const distLabel = Math.round((sonar.range / rings) * i);
     const labelText = distLabel >= 1000 ? `${(distLabel/1000).toFixed(1)}km` : `${distLabel}m`;
-    ctx.fillText(labelText, cx, cy - r + 12);
+    ctx.fillText(labelText, cx, cy - r + 14);
   }
 }
 
@@ -929,11 +929,11 @@ function drawScanLine(ctx, cx, cy, radius) {
   const startAngle = (sonar.scanAngle - 90) * Math.PI / 180;
   const endAngle = (sonar.scanAngle + scanArc - 90) * Math.PI / 180;
   
-  // 扇形グラデーション
+  // 扇形グラデーション（黄色系 - ドラゴンレーダー風）
   const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-  grad.addColorStop(0, 'rgba(66, 153, 225, 0.4)');
-  grad.addColorStop(0.8, 'rgba(66, 153, 225, 0.2)');
-  grad.addColorStop(1, 'rgba(66, 153, 225, 0)');
+  grad.addColorStop(0, 'rgba(255, 220, 100, 0.5)');
+  grad.addColorStop(0.8, 'rgba(255, 220, 100, 0.2)');
+  grad.addColorStop(1, 'rgba(255, 220, 100, 0)');
   
   ctx.fillStyle = grad;
   ctx.beginPath();
@@ -942,9 +942,9 @@ function drawScanLine(ctx, cx, cy, radius) {
   ctx.closePath();
   ctx.fill();
   
-  // スキャンラインの先端（明るいライン）
-  ctx.strokeStyle = 'rgba(66, 153, 225, 0.8)';
-  ctx.lineWidth = 2;
+  // スキャンラインの先端（明るい黄色ライン）
+  ctx.strokeStyle = 'rgba(255, 193, 7, 0.9)';
+  ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(cx, cy);
   const lineAngle = (sonar.scanAngle - 90) * Math.PI / 180;
@@ -974,37 +974,42 @@ function drawSonarCheckpoints(ctx, cx, cy, radius) {
     // 光点の色（距離グラデーション）
     const color = getDistanceColor(dist, 0, sonar.range);
     
-    // 光点サイズ
-    const baseSize = 12;
-    const size = baseSize * (1 - normalizedDist * 0.5);
+    // 光点サイズ（ドラゴンレーダー風に少し大きめ）
+    const baseSize = 14;
+    const size = baseSize * (1 - normalizedDist * 0.4);
     
-    // グロー効果
-    const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, size * 2);
-    glowGrad.addColorStop(0, color);
-    glowGrad.addColorStop(0.5, color.replace(')', ', 0.5)').replace('hsl', 'hsla'));
-    glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    // グロー効果（黄色系で明るく）
+    const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, size * 2.5);
+    glowGrad.addColorStop(0, '#ffd700');
+    glowGrad.addColorStop(0.4, 'rgba(255, 215, 0, 0.6)');
+    glowGrad.addColorStop(1, 'rgba(255, 215, 0, 0)');
     ctx.fillStyle = glowGrad;
     ctx.beginPath();
-    ctx.arc(x, y, size * 2, 0, Math.PI * 2);
+    ctx.arc(x, y, size * 2.5, 0, Math.PI * 2);
     ctx.fill();
     
-    // 光点本体
-    ctx.fillStyle = color;
+    // 光点本体（黄色 - ドラゴンレーダー風）
+    ctx.fillStyle = '#ffd700';
     ctx.beginPath();
     ctx.arc(x, y, size, 0, Math.PI * 2);
     ctx.fill();
     
+    // 外周リング
+    ctx.strokeStyle = '#ff6b00';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
     // 完了済みの場合、チェックマーク
     if (completedCheckpoints.has(cp.id)) {
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = '#2d3748';
       ctx.font = `bold ${size * 1.5}px system-ui`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('✓', x, y);
     } else {
       // ポイント数表示
-      ctx.fillStyle = '#fff';
-      ctx.font = `bold ${size}px system-ui`;
+      ctx.fillStyle = '#2d3748';
+      ctx.font = `bold ${Math.max(size * 0.9, 10)}px system-ui`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(cp.points, x, y);
@@ -1013,10 +1018,10 @@ function drawSonarCheckpoints(ctx, cx, cy, radius) {
     // スキャンライン通過時のフラッシュ効果
     const scanDiff = Math.abs(((relBearing - sonar.scanAngle + 540) % 360) - 180);
     if (scanDiff < 5) {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255, 193, 7, 0.9)';
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(x, y, size + 4, 0, Math.PI * 2);
+      ctx.arc(x, y, size + 6, 0, Math.PI * 2);
       ctx.stroke();
       
       // 音響フィードバック
@@ -1028,11 +1033,11 @@ function drawSonarCheckpoints(ctx, cx, cy, radius) {
     // 最寄りCPにパルス効果
     if (cp.id === getNearestCheckpointId()) {
       const pulsePhase = (Date.now() % 2000) / 2000;
-      const pulseAlpha = 0.3 + Math.sin(pulsePhase * Math.PI * 2) * 0.2;
-      ctx.strokeStyle = `rgba(255, 255, 255, ${pulseAlpha})`;
+      const pulseAlpha = 0.4 + Math.sin(pulsePhase * Math.PI * 2) * 0.3;
+      ctx.strokeStyle = `rgba(255, 107, 0, ${pulseAlpha})`;
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(x, y, size + 6, 0, Math.PI * 2);
+      ctx.arc(x, y, size + 8, 0, Math.PI * 2);
       ctx.stroke();
     }
   });
@@ -1097,13 +1102,13 @@ function drawElevationProfile() {
   ctx.clearRect(0, 0, w, h);
   
   // 背景
-  ctx.fillStyle = 'rgba(26, 32, 44, 0.3)';
+  ctx.fillStyle = '#f7fafc';
   ctx.fillRect(0, 0, w, h);
   
   // 基準線（現在地の標高）
   const baselineY = h / 2;
-  ctx.strokeStyle = 'rgba(72, 187, 120, 0.5)';
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(72, 187, 120, 0.6)';
+  ctx.lineWidth = 2;
   ctx.setLineDash([5, 5]);
   ctx.beginPath();
   ctx.moveTo(0, baselineY);
@@ -1127,28 +1132,40 @@ function drawElevationProfile() {
   distances.forEach(({ cp, dist }) => {
     const x = (dist / maxDist) * w;
     const elevDiff = (cp.elevation || 650) - (currentPosition.elevation || 650);
-    const barHeight = Math.min(Math.abs(elevDiff) / 2, h / 2 - 5);
+    const barHeight = Math.min(Math.abs(elevDiff) / 1.5, h / 2 - 15); // 余裕を持たせる
     
-    // 登り/下りで色分け
+    // 登り/下りで色分け（ライトテーマ対応）
     const color = elevDiff > 0 
-      ? `rgba(239, 68, 68, ${0.3 + barHeight / h})` 
-      : `rgba(59, 130, 246, ${0.3 + barHeight / h})`;
+      ? `rgba(239, 68, 68, ${0.5 + barHeight / h * 0.3})` 
+      : `rgba(59, 130, 246, ${0.5 + barHeight / h * 0.3})`;
     
     ctx.fillStyle = color;
     if (elevDiff > 0) {
       // 登り：上向きバー
-      ctx.fillRect(x - 3, baselineY - barHeight, 6, barHeight);
+      ctx.fillRect(x - 4, baselineY - barHeight, 8, barHeight);
     } else {
       // 下り：下向きバー
-      ctx.fillRect(x - 3, baselineY, 6, barHeight);
+      ctx.fillRect(x - 4, baselineY, 8, barHeight);
     }
     
-    // CP番号
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 10px system-ui';
+    // CP番号（フォントサイズを大きく、背景付きで視認性向上）
+    ctx.fillStyle = '#2d3748';
+    ctx.font = 'bold 13px system-ui';
     ctx.textAlign = 'center';
-    const textY = elevDiff > 0 ? baselineY - barHeight - 5 : baselineY + barHeight + 12;
-    ctx.fillText(cp.points, x, textY);
+    
+    // 背景（白い円）
+    const textY = elevDiff > 0 ? baselineY - barHeight - 12 : baselineY + barHeight + 18;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(x, textY, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#2d3748';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    
+    // 番号
+    ctx.fillStyle = '#2d3748';
+    ctx.fillText(cp.points, x, textY + 1);
   });
 }
 
@@ -1157,8 +1174,8 @@ function updateSonarNearestInfo() {
   const infoDetails = document.querySelector('#sonar-nearest-info .info-details');
   
   if (!infoName || !infoDetails || !currentPosition) {
-    if (infoName) infoName.textContent = '位置情報を取得中...';
-    if (infoDetails) infoDetails.innerHTML = '';
+    if (infoName) infoName.textContent = '最寄りのターゲット';
+    if (infoDetails) infoDetails.innerHTML = '<span style="color:#718096;">位置情報を取得中...</span>';
     return;
   }
   
@@ -1179,15 +1196,16 @@ function updateSonarNearestInfo() {
     const eta = calculateETA(nearestDist, elevDiff);
     const elevText = elevDiff !== 0 ? ` ${elevDiff > 0 ? '↗+' : '↘'}${Math.abs(Math.round(elevDiff))}m` : '';
     
-    infoName.textContent = `→ ${nearestCP.name}`;
+    infoName.textContent = '最寄りのターゲット';
     infoDetails.innerHTML = `
+      <span style="font-size:18px;color:#667eea;font-weight:800;">${nearestCP.name}</span>
       <span>📏 ${Math.round(nearestDist)}m${elevText}</span>
-      <span>⏱️ ETA: 約${Math.round(eta)}分</span>
-      <span>⭐ ${nearestCP.points}点</span>
+      <span>⏱️ 約${Math.round(eta)}分</span>
+      <span style="background:#667eea;color:#fff;padding:4px 12px;border-radius:12px;">⭐ ${nearestCP.points}点</span>
     `;
   } else {
-    infoName.textContent = 'すべてクリア!';
-    infoDetails.innerHTML = '';
+    infoName.textContent = '最寄りのターゲット';
+    infoDetails.innerHTML = '<span style="color:#48bb78;font-weight:800;font-size:18px;">🎉 すべてクリア!</span>';
   }
 }
 
