@@ -99,11 +99,7 @@
       <!-- ソナー円形ディスプレイ -->
       <div id="sonar-container">
         <canvas id="sonar-canvas"></canvas>
-        <!-- 方位ラベル（固定） -->
-        <div class="sonar-cardinal north">N</div>
-        <div class="sonar-cardinal east">E</div>
-        <div class="sonar-cardinal south">S</div>
-        <div class="sonar-cardinal west">W</div>
+        <!-- 方位ラベルはCanvasで描画 -->
       </div>
 
       <!-- 標高付き距離バー -->
@@ -120,7 +116,7 @@
         <!-- 下段：標高断面図 -->
         <div class="elevation-profile">
           <canvas id="elevation-profile-canvas"></canvas>
-          <div class="current-position-marker">📍</div>
+          <div class="current-position-marker" title="現在地（距離0m）">📍</div>
         </div>
       </div>
 

@@ -825,29 +825,34 @@ function initSonar() {
       const w = sonar.elevationCanvas.width;
       const h = sonar.elevationCanvas.height;
       const currentElev = currentPosition.elevation || 650;
-      const baselineY = h / 2;
+      const baselineY = h * 0.55;
+      const leftMargin = 40;
+      const rightMargin = 5;
+      const graphWidth = w - leftMargin - rightMargin;
+      const maxScaleHeight = h * 0.35;
       
-      let distances = [];
+      let cpData = [];
       checkpoints.forEach(cp => {
         const dist = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
         if (dist <= sonar.range && !completedCheckpoints.has(cp.id)) {
-          distances.push({ cp, dist });
+          cpData.push({ cp, dist });
         }
       });
       
-      if (distances.length === 0) return;
-      
-      const maxDist = Math.max(...distances.map(d => d.dist));
+      if (cpData.length === 0) return;
       
       // クリック位置に最も近いCPを探す
       let nearestCP = null;
       let minDistance = Infinity;
       
-      distances.forEach(({ cp, dist }) => {
-        const cpX = 40 + ((dist / maxDist) * (w - 50));
+      cpData.forEach(({ cp, dist }) => {
+        // X軸はsonar.rangeベースで統一
+        const cpX = leftMargin + (dist / sonar.range) * graphWidth;
         const elevDiff = (cp.elevation || 650) - currentElev;
-        const cpY = elevDiff > 0 ? baselineY - Math.min(Math.abs(elevDiff) / 1.5, h / 2 - 20) - 18 
-                                  : baselineY + Math.min(Math.abs(elevDiff) / 1.5, h / 2 - 20) + 18;
+        const barHeight = Math.min(Math.abs(elevDiff) / 1.2, maxScaleHeight * 0.9);
+        const labelOffset = 22;
+        const cpY = elevDiff > 0 ? baselineY - barHeight - labelOffset
+                                  : baselineY + barHeight + labelOffset;
         
         const clickDist = Math.sqrt((x - cpX) ** 2 + (y - cpY) ** 2);
         if (clickDist < 25 && clickDist < minDistance) {
@@ -891,7 +896,7 @@ function initSonar() {
         
         const normalizedDist = dist / sonar.range;
         const r = normalizedDist * radius;
-        const angle = (relBearing - 90 - heading) * Math.PI / 180;
+        const angle = (relBearing - 90) * Math.PI / 180;
         const cpX = cx + r * Math.cos(angle);
         const cpY = cy + r * Math.sin(angle);
         
@@ -1250,26 +1255,29 @@ function drawElevationProfile() {
   ctx.fillRect(0, 0, w, h);
   
   const currentElev = currentPosition.elevation || 650;
-  const baselineY = h / 2;
+  const baselineY = h * 0.55; // 高さ120pxに対応して少し下に
+  const leftMargin = 40;
+  const rightMargin = 5;
   
   // 凡例を右上に追加
   ctx.save();
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-  ctx.fillRect(w - 110, 5, 105, 35);
-  ctx.strokeStyle = '#e2e8f0';
-  ctx.strokeRect(w - 110, 5, 105, 35);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+  ctx.fillRect(w - 115, 8, 110, 38);
+  ctx.strokeStyle = '#cbd5e0';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(w - 115, 8, 110, 38);
   
   ctx.font = 'bold 11px system-ui';
   ctx.textAlign = 'left';
   ctx.fillStyle = '#ef4444';
-  ctx.fillRect(w - 105, 12, 15, 10);
+  ctx.fillRect(w - 108, 15, 16, 11);
   ctx.fillStyle = '#2d3748';
-  ctx.fillText('🔺登り', w - 85, 20);
+  ctx.fillText('🔺登り', w - 87, 23);
   
   ctx.fillStyle = '#3b82f6';
-  ctx.fillRect(w - 105, 27, 15, 10);
+  ctx.fillRect(w - 108, 31, 16, 11);
   ctx.fillStyle = '#2d3748';
-  ctx.fillText('🔻下り', w - 85, 35);
+  ctx.fillText('🔻下り', w - 87, 39);
   ctx.restore();
   
   // Y軸スケール（左側）
@@ -1280,39 +1288,47 @@ function drawElevationProfile() {
   
   // スケール線とラベル
   const scaleSteps = [50, 25, 0, -25, -50];
+  const maxScaleHeight = h * 0.35; // 上下の最大表示範囲
+  
   scaleSteps.forEach(diff => {
-    const y = baselineY - (diff / 50) * (h / 4);
+    const y = baselineY - (diff / 50) * maxScaleHeight;
     
     // 横線
     ctx.strokeStyle = diff === 0 ? 'rgba(72, 187, 120, 0.8)' : 'rgba(160, 174, 192, 0.3)';
-    ctx.lineWidth = diff === 0 ? 2 : 1;
+    ctx.lineWidth = diff === 0 ? 2.5 : 1;
     if (diff === 0) {
       ctx.setLineDash([]);
     } else {
-      ctx.setLineDash([3, 3]);
+      ctx.setLineDash([4, 4]);
     }
     ctx.beginPath();
-    ctx.moveTo(35, y);
-    ctx.lineTo(w - 5, y);
+    ctx.moveTo(leftMargin - 3, y);
+    ctx.lineTo(w - rightMargin, y);
     ctx.stroke();
     
     // ラベル
     const label = diff === 0 ? `${currentElev}m` : `${diff > 0 ? '+' : ''}${diff}`;
-    ctx.fillText(label, 32, y + 3);
+    ctx.fillText(label, leftMargin - 6, y + 3);
   });
   ctx.setLineDash([]);
   ctx.restore();
   
-  // 各CPの標高バー
-  let distances = [];
+  // タイトル
+  ctx.fillStyle = '#2d3748';
+  ctx.font = 'bold 12px system-ui';
+  ctx.textAlign = 'left';
+  ctx.fillText('標高プロファイル', 8, 15);
+  
+  // 各CPの標高バー（X軸をsonar.rangeベースに統一）
+  let cpData = [];
   checkpoints.forEach(cp => {
     const dist = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
     if (dist <= sonar.range && !completedCheckpoints.has(cp.id)) {
-      distances.push({ cp, dist });
+      cpData.push({ cp, dist });
     }
   });
   
-  if (distances.length === 0) {
+  if (cpData.length === 0) {
     ctx.fillStyle = '#718096';
     ctx.font = 'bold 14px system-ui';
     ctx.textAlign = 'center';
@@ -1320,72 +1336,73 @@ function drawElevationProfile() {
     return;
   }
   
-  const maxDist = Math.max(...distances.map(d => d.dist));
+  // CPバーとラベル（距離バーと同じスケールを使用）
+  const graphWidth = w - leftMargin - rightMargin;
   
-  // CPバーとラベル
-  distances.forEach(({ cp, dist }) => {
-    const x = 40 + ((dist / maxDist) * (w - 50));
+  cpData.forEach(({ cp, dist }) => {
+    // 距離バーと同じ位置計算（sonar.rangeベース）
+    const x = leftMargin + (dist / sonar.range) * graphWidth;
+    
     const elevDiff = (cp.elevation || 650) - currentElev;
-    const barHeight = Math.min(Math.abs(elevDiff) / 1.5, h / 2 - 20);
+    const barHeight = Math.min(Math.abs(elevDiff) / 1.2, maxScaleHeight * 0.9);
     
     // バーの色
+    const alpha = 0.6 + (barHeight / maxScaleHeight) * 0.3;
     const color = elevDiff > 0 
-      ? `rgba(239, 68, 68, ${0.5 + barHeight / h * 0.3})` 
-      : `rgba(59, 130, 246, ${0.5 + barHeight / h * 0.3})`;
+      ? `rgba(239, 68, 68, ${alpha})` 
+      : `rgba(59, 130, 246, ${alpha})`;
     
     // バー本体
     ctx.fillStyle = color;
+    const barWidth = 12;
     if (elevDiff > 0) {
-      ctx.fillRect(x - 5, baselineY - barHeight, 10, barHeight);
+      ctx.fillRect(x - barWidth/2, baselineY - barHeight, barWidth, barHeight);
     } else {
-      ctx.fillRect(x - 5, baselineY, 10, barHeight);
+      ctx.fillRect(x - barWidth/2, baselineY, barWidth, Math.abs(barHeight));
     }
     
     // 外枠
     ctx.strokeStyle = '#2d3748';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.5;
     if (elevDiff > 0) {
-      ctx.strokeRect(x - 5, baselineY - barHeight, 10, barHeight);
+      ctx.strokeRect(x - barWidth/2, baselineY - barHeight, barWidth, barHeight);
     } else {
-      ctx.strokeRect(x - 5, baselineY, 10, barHeight);
+      ctx.strokeRect(x - barWidth/2, baselineY, barWidth, Math.abs(barHeight));
     }
     
     // CP番号と標高差（背景付き）
-    const textY = elevDiff > 0 ? baselineY - barHeight - 18 : baselineY + barHeight + 18;
+    const labelOffset = 22;
+    const textY = elevDiff > 0 ? baselineY - barHeight - labelOffset : baselineY + barHeight + labelOffset;
     
-    // 白い円背景
+    // 白い円背景（大きめ）
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(x, textY, 13, 0, Math.PI * 2);
+    ctx.arc(x, textY, 15, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#2d3748';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 2;
     ctx.stroke();
     
     // CP番号
     ctx.fillStyle = '#2d3748';
-    ctx.font = 'bold 16px system-ui';
+    ctx.font = 'bold 17px system-ui';
     ctx.textAlign = 'center';
-    ctx.fillText(cp.points, x, textY + 1);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(cp.points, x, textY);
     
-    // 標高差ラベル（バーの横）
+    // 標高差ラベル（バーの外側）
     ctx.font = 'bold 11px system-ui';
     ctx.fillStyle = elevDiff > 0 ? '#ef4444' : '#3b82f6';
     const elevText = `${elevDiff > 0 ? '+' : ''}${Math.round(elevDiff)}m`;
-    ctx.fillText(elevText, x, textY + (elevDiff > 0 ? -18 : 18));
-    
-    // タップ可能領域を示す視覚的ヒント（ホバー用の薄い枠）
-    ctx.strokeStyle = 'rgba(102, 126, 234, 0.3)';
-    ctx.lineWidth = 2;
-    const hitboxSize = 20;
-    ctx.strokeRect(x - hitboxSize/2, textY - hitboxSize/2, hitboxSize, hitboxSize);
+    const elevLabelY = elevDiff > 0 ? textY - 20 : textY + 20;
+    ctx.fillText(elevText, x, elevLabelY);
   });
   
-  // タイトル
-  ctx.fillStyle = '#2d3748';
-  ctx.font = 'bold 11px system-ui';
+  // 現在地マーカー（左端）の説明ラベル
+  ctx.fillStyle = '#4a5568';
+  ctx.font = 'bold 10px system-ui';
   ctx.textAlign = 'left';
-  ctx.fillText('標高プロファイル', 5, 12);
+  ctx.fillText('現在地', leftMargin + 2, h - 8);
 }
 
 function updateSonarNearestInfo() {
