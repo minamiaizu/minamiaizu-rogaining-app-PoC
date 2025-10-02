@@ -86,7 +86,8 @@ let ar = {
   lastFrameTime: 0,
   fpsLimit: 30,
   distanceCache: {},
-  lastCacheTime: 0
+  lastCacheTime: 0,
+  debugMode: false  // デバッグ表示のON/OFF
 };
 
 const STORAGE_KEY = 'rogaining_data';
@@ -1031,9 +1032,11 @@ function arLoop(currentTime){
     // 距離計算（キャッシュ使用）
     const d = getCachedDistance(cp.id, currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
     
-    // 方位計算（平滑化された方位角を使用）
+    // 方位計算（現在の方位を使用）
     const b = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
-    let rel = ((b - smoothedHeading + 540) % 360) - 180; // -180〜180
+    // OrientationManagerから直接取得する方位を使用
+    const actualHeading = orientationManager ? orientationManager.getHeading() : smoothedHeading;
+    let rel = ((b - actualHeading + 540) % 360) - 180; // -180〜180
     
     // 標高差と仰角計算
     const elevDiff = (cp.elevation ?? 650) - (currentPosition.elevation ?? 650);
@@ -1045,8 +1048,8 @@ function arLoop(currentTime){
     const devicePitchRad = correctedPitch * Math.PI / 180;
     const screenElevAngle = elevAngle - devicePitchRad;
     
-    // デバッグ情報を収集
-    if (debugInfo.length < 3) { // 最初の3つのCPのみ
+    // デバッグ情報を収集（デバッグモード時のみ）
+    if (ar.debugMode && debugInfo.length < 3) { // 最初の3つのCPのみ
       const inRange = d <= ar.range;
       debugInfo.push({
         name: cp.name,
@@ -1096,37 +1099,47 @@ function arLoop(currentTime){
     ctx.fillText(label, x, y + r + 4);
   });
   
-  // デバッグ情報を画面に表示
-  ctx.fillStyle = 'rgba(0,0,0,0.8)';
-  ctx.fillRect(10, 10, 320, 250);
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 11px monospace';
-  ctx.textAlign = 'left';
-  
-  let y = 25;
-  
-  // OrientationManager情報を追加
-  if (orientationManager) {
-    const debugInfo = orientationManager.getDebugInfo();
-    ctx.fillText(`Platform: ${debugInfo.platform}`, 15, y); y += 15;
-    ctx.fillText(`Mode: ${debugInfo.mode}`, 15, y); y += 15;
-    ctx.fillText(`Confidence: ${debugInfo.confidence}`, 15, y); y += 15;
-    ctx.fillText(`Gyro: ${debugInfo.gyro}`, 15, y); y += 15;
-    if (debugInfo.gyro === 'OK' && debugInfo.mode === 'ar') {
-      ctx.fillStyle = '#48bb78';
-      ctx.fillText(`Drift corr: ${Math.round(debugInfo.driftCorrection || 0)}°`, 15, y);
-      ctx.fillStyle = '#fff';
-      y += 15;
+  // デバッグ情報を画面に表示（デバッグモードONの時のみ）
+  if (ar.debugMode) {
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillRect(10, 10, 320, 250);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'left';
+    
+    let y = 25;
+    
+    // OrientationManager情報を追加
+    if (orientationManager) {
+      const debugInfo = orientationManager.getDebugInfo();
+      ctx.fillText(`Platform: ${debugInfo.platform}`, 15, y); y += 15;
+      ctx.fillText(`Mode: ${debugInfo.mode}`, 15, y); y += 15;
+      ctx.fillText(`Confidence: ${debugInfo.confidence}`, 15, y); y += 15;
+      ctx.fillText(`Gyro: ${debugInfo.gyro}`, 15, y); y += 15;
+      if (debugInfo.gyro === 'OK' && debugInfo.mode === 'ar') {
+        ctx.fillStyle = '#48bb78';
+        ctx.fillText(`Drift corr: ${Math.round(debugInfo.driftCorrection || 0)}°`, 15, y);
+        ctx.fillStyle = '#fff';
+        y += 15;
+      }
     }
+    
+    ctx.fillText(`Heading(raw): ${Math.round(currentHeading)}°`, 15, y); y += 15;
+    ctx.fillText(`Heading(smooth): ${Math.round(smoothedHeading)}°`, 15, y); y += 15;
+    ctx.fillText(`Pitch(raw): ${Math.round(devicePitch)}°`, 15, y); y += 15;
+    ctx.fillText(`Pitch(adj): ${Math.round(devicePitch - 90)}°`, 15, y); y += 15;
+    ctx.fillText(`Range: ${ar.range}m`, 15, y); y += 15;
+    ctx.fillText(`FOV: H=${Math.round(ar.fovH*180/Math.PI)}° V=${Math.round(ar.fovV*180/Math.PI)}°`, 15, y); y += 15;
+    ctx.fillText(`Visible: ${visibleCount}/${checkpoints.length}`, 15, y); y += 15;
+    
+    // 個別CP情報
+    ctx.font = '10px monospace';
+    debugInfo.forEach((info, i) => {
+      const status = info.inRange ? 'OK' : 'FAR';
+      ctx.fillText(`${info.name.substring(0,8)} ${info.dist}m R:${info.rel}° E:${info.elev}° ${status}`, 15, y);
+      y += 13;
+    });
   }
-  
-  ctx.fillText(`Heading(raw): ${Math.round(currentHeading)}°`, 15, y); y += 15;
-  ctx.fillText(`Heading(smooth): ${Math.round(smoothedHeading)}°`, 15, y); y += 15;
-  ctx.fillText(`Pitch(raw): ${Math.round(devicePitch)}°`, 15, y); y += 15;
-  ctx.fillText(`Pitch(adj): ${Math.round(devicePitch - 90)}°`, 15, y); y += 15;
-  ctx.fillText(`Range: ${ar.range}m`, 15, y); y += 15;
-  ctx.fillText(`FOV: H=${Math.round(ar.fovH*180/Math.PI)}° V=${Math.round(ar.fovV*180/Math.PI)}°`, 15, y); y += 15;
-  ctx.fillText(`Visible: ${visibleCount}/${checkpoints.length}`, 15, y); y += 15;
   
   // 個別CP情報
   ctx.font = '10px monospace';
@@ -1196,6 +1209,17 @@ cameraSelectorBtn.onclick = async ()=>{
   await showCameraSelector();
 };
 document.getElementById('ar-view')?.appendChild(cameraSelectorBtn);
+
+/* ======== Debug mode toggle button ======== */
+const debugToggleBtn = document.createElement('button');
+debugToggleBtn.textContent = '🐛';
+debugToggleBtn.style.cssText = 'position:absolute;top:10px;right:70px;background:rgba(0,0,0,.5);color:#fff;border:none;padding:10px 15px;border-radius:8px;cursor:pointer;z-index:1000;';
+debugToggleBtn.onclick = ()=>{
+  ar.debugMode = !ar.debugMode;
+  debugToggleBtn.style.backgroundColor = ar.debugMode ? 'rgba(255,0,0,.5)' : 'rgba(0,0,0,.5)';
+  debugLog(`ARデバッグモード: ${ar.debugMode ? 'ON' : 'OFF'}`);
+};
+document.getElementById('ar-view')?.appendChild(debugToggleBtn);
 
 /* ======== Events ======== */
 document.getElementById('get-location-btn')?.addEventListener('click', getCurrentLocation);
