@@ -14,6 +14,7 @@ class SonarView {
     // 依存性注入
     this.stateMgr = options.stateMgr;
     this.geoMgr = options.geoMgr;
+    this.orientationMgr = options.orientationMgr;
     
     // Canvas要素
     this.canvas = null;
@@ -37,8 +38,8 @@ class SonarView {
     this.distanceCache = {};
     this.lastCacheTime = 0;
     
-    if (!this.stateMgr || !this.geoMgr) {
-      this.log('⚠️ StateManager/GeoManagerが注入されていません');
+    if (!this.stateMgr || !this.geoMgr || !this.orientationMgr) {
+      this.log('⚠️ StateManager/GeoManager/OrientationManagerが注入されていません');
     }
   }
   
@@ -165,7 +166,7 @@ class SonarView {
     
     ctx.save();
     ctx.translate(cx, cy);
-    const heading = window.smoothedHeading || 0;
+    const heading = this.orientationMgr?.getHeading() || 0;
     ctx.rotate(-heading * Math.PI / 180);
     ctx.translate(-cx, -cy);
     
@@ -254,7 +255,7 @@ class SonarView {
       if (dist > this.options.range) return;
       
       const brng = this.geoMgr.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
-      const heading = window.smoothedHeading || 0;
+      const heading = this.orientationMgr?.getHeading() || 0;
       const relBearing = (brng - heading + 360) % 360;
       
       const normalizedDist = dist / this.options.range;
@@ -659,7 +660,7 @@ class SonarView {
       if (dist > this.options.range) return;
       
       const brng = this.geoMgr.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
-      const heading = window.smoothedHeading || 0;
+      const heading = this.orientationMgr?.getHeading() || 0;
       const relBearing = (brng - heading + 360) % 360;
       
       const normalizedDist = dist / this.options.range;
@@ -858,7 +859,7 @@ if (typeof window !== 'undefined') {
 }
 
 if (typeof debugLog === 'function') {
-  debugLog('✅ SonarView (Refactored) 読み込み完了');
+  debugLog('✅ SonarView (Refactored - OrientationMgr Integrated) 読み込み完了');
 } else {
-  console.log('[SonarView] Refactored version loaded');
+  console.log('[SonarView] Refactored version with OrientationMgr loaded');
 }

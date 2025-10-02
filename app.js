@@ -93,7 +93,8 @@ async function init() {
     range: sonarConfig.defaultRange || 1000,
     audioEnabled: sonarConfig.audioEnabled || false,
     stateMgr: stateMgr,
-    geoMgr: geoMgr
+    geoMgr: geoMgr,
+    orientationMgr: orientationMgr
   });
   sonarView.init();
   
@@ -172,7 +173,7 @@ function handleOrientationUpdate(data) {
       currentPosition, heading, stateMgr.checkpoints, stateMgr.completedIds
     );
   } else if (currentView === 'sonar') {
-    sonarView.update(currentPosition, heading);
+    sonarView.update(currentPosition, heading, stateMgr.checkpoints, stateMgr.completedIds);
   } else if (currentView === 'ar' && arView) {
     arView.update(currentPosition, heading, pitch);
     arView.updateSensorMode(data.mode);
