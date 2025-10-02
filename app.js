@@ -70,8 +70,14 @@ let ar = {
   ctx: null,
   canvas: null,
   video: null,
-  fovH: 80 * Math.PI/180,  // 水平視野角を60→80度に拡大
-  fovV: 60 * Math.PI/180,  // 垂直視野角を45→60度に拡大
+  fovH: 60 * Math.PI/180,
+  fovV: 45 * Math.PI/180,
+  fovPresets: {
+    wide: { h: 70, v: 52, label: '広角' },
+    normal: { h: 60, v: 45, label: '標準' },
+    tele: { h: 45, v: 34, label: '望遠' }
+  },
+  selectedFov: 'normal',
   range: 1000,
   timerId: null,
   secondsLeft: 300,
@@ -889,13 +895,21 @@ function arLoop(currentTime){
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   
-  // 画面に表示される範囲の方位角を計算（±90度）
-  for (let offset = -90; offset <= 90; offset += 5) {
+  // FOVに応じた表示範囲を計算（FOVの半分±余裕）
+  const fovHDeg = ar.fovH * 180 / Math.PI;
+  const displayRange = fovHDeg / 2 + 10; // 視野角の半分+余裕10度
+  
+  // 5度刻みで目盛りを描画
+  for (let offset = -displayRange; offset <= displayRange; offset += 5) {
     const angle = (smoothedHeading + offset + 360) % 360;
-    const x = w/2 + offset * (w / 120); // 120度分を画面幅に表示
+    const normalizedOffset = offset / fovHDeg;  // FOVで正規化
+    const x = w/2 + normalizedOffset * w;
+    
+    // 画面外は描画しない
+    if (x < 0 || x > w) continue;
     
     // 主要方位（N/E/S/W）
-    if (angle === 0) {
+    if (Math.abs(angle - 0) < 2.5 || Math.abs(angle - 360) < 2.5) {
       ctx.fillStyle = '#ff3030';
       ctx.font = 'bold 20px system-ui';
       ctx.fillText('N', x, tapeHeight/2);
@@ -908,20 +922,27 @@ function arLoop(currentTime){
       ctx.stroke();
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 16px system-ui';
-    } else if (angle === 90) {
+    } else if (Math.abs(angle - 90) < 2.5) {
       ctx.fillText('E', x, tapeHeight/2);
-    } else if (angle === 180) {
+    } else if (Math.abs(angle - 180) < 2.5) {
       ctx.fillText('S', x, tapeHeight/2);
-    } else if (angle === 270) {
+    } else if (Math.abs(angle - 270) < 2.5) {
       ctx.fillText('W', x, tapeHeight/2);
     }
     
     // 目盛り線（5度刻み）
-    if (offset % 5 === 0 && angle % 90 !== 0) {
+    const isCardinal = Math.abs(angle - 0) < 2.5 || Math.abs(angle - 90) < 2.5 || 
+                      Math.abs(angle - 180) < 2.5 || Math.abs(angle - 270) < 2.5 || 
+                      Math.abs(angle - 360) < 2.5;
+    if (offset % 5 === 0 && !isCardinal) {
       ctx.strokeStyle = 'rgba(255,255,255,0.3)';
       ctx.lineWidth = offset % 15 === 0 ? 2 : 1;
       ctx.beginPath();
       ctx.moveTo(x, tapeHeight - 10);
+      ctx.lineTo(x, tapeHeight);
+      ctx.stroke();
+    }
+  }
       ctx.lineTo(x, tapeHeight);
       ctx.stroke();
     }
@@ -994,7 +1015,10 @@ function arLoop(currentTime){
     visibleCount++;
     
     // 画面座標計算（ピッチ補正済み）
-    const x = w/2 + (rel * (Math.PI/180)) / ar.fovH * w;
+    // 相対方位角をラジアンに変換
+    const relRad = rel * Math.PI / 180;
+    // FOV範囲内での正規化位置を計算
+    const x = w/2 + (relRad / ar.fovH) * w;
     const y = h/2 - screenElevAngle / ar.fovV * h;
 
     // マーカー描画
@@ -1059,6 +1083,19 @@ for (const btn of document.querySelectorAll('.range-btn')){
     const label = ar.range >= 1000 ? `${ar.range/1000}km` : `${ar.range}m`;
     document.getElementById('max-distance-label').textContent = label;
     debugLog(`AR表示レンジ: ${label}`);
+  });
+}
+
+for (const btn of document.querySelectorAll('.fov-btn')){
+  btn.addEventListener('click', ()=>{
+    for (const b of document.querySelectorAll('.fov-btn')) b.classList.remove('active');
+    btn.classList.add('active');
+    const fovType = btn.dataset.fov;
+    ar.selectedFov = fovType;
+    const preset = ar.fovPresets[fovType];
+    ar.fovH = preset.h * Math.PI / 180;
+    ar.fovV = preset.v * Math.PI / 180;
+    debugLog(`AR視野角: ${preset.label} (${preset.h}°×${preset.v}°)`);
   });
 }
 

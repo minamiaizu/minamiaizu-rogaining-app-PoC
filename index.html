@@ -137,11 +137,18 @@
         </div>
         
         <div class="ar-range">
-          <button type="button" class="range-btn" data-range="250">250m</button>
-          <button type="button" class="range-btn" data-range="500">500m</button>
-          <button type="button" class="range-btn active" data-range="1000">1km</button>
-          <button type="button" class="range-btn" data-range="2500">2.5km</button>
-          <button type="button" class="range-btn" data-range="5000">5km</button>
+          <div class="ar-fov-selector">
+            <button type="button" class="fov-btn" data-fov="wide">広角</button>
+            <button type="button" class="fov-btn active" data-fov="normal">標準</button>
+            <button type="button" class="fov-btn" data-fov="tele">望遠</button>
+          </div>
+          <div class="ar-range-selector">
+            <button type="button" class="range-btn" data-range="250">250m</button>
+            <button type="button" class="range-btn" data-range="500">500m</button>
+            <button type="button" class="range-btn active" data-range="1000">1km</button>
+            <button type="button" class="range-btn" data-range="2500">2.5km</button>
+            <button type="button" class="range-btn" data-range="5000">5km</button>
+          </div>
           <span class="ar-countdown">残り <span id="ar-remaining">05:00</span></span>
         </div>
       </div>

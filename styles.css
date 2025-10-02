@@ -136,10 +136,12 @@ main{padding-bottom:40px}
 /* 最寄りCP情報 */
 .nearest-cp-display{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;backdrop-filter:blur(4px);white-space:nowrap;max-width:90%;overflow:hidden;text-overflow:ellipsis}
 
-.ar-range{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:6px;align-items:center;background:rgba(0,0,0,.5);padding:8px 10px;border-radius:12px;backdrop-filter:blur(4px);z-index:101}
-.range-btn{pointer-events:auto;background:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:800;font-size:13px;color:var(--text);cursor:pointer;transition:all .2s}
-.range-btn:hover{transform:scale(1.05)}
-.range-btn.active{background:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(102,126,234,.5)}
-.ar-countdown{color:#fff;font-weight:800;margin-left:8px;font-size:14px}
+.ar-range{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;align-items:center;background:rgba(0,0,0,.5);padding:10px 12px;border-radius:12px;backdrop-filter:blur(4px);z-index:101}
+.ar-fov-selector{display:flex;gap:6px}
+.ar-range-selector{display:flex;gap:6px}
+.fov-btn,.range-btn{pointer-events:auto;background:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:800;font-size:13px;color:var(--text);cursor:pointer;transition:all .2s}
+.fov-btn:hover,.range-btn:hover{transform:scale(1.05)}
+.fov-btn.active,.range-btn.active{background:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(102,126,234,.5)}
+.ar-countdown{color:#fff;font-weight:800;font-size:14px}
 
 #compass-ticks{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
