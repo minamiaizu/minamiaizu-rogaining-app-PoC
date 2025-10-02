@@ -41,6 +41,7 @@
     <div id="tabs">
       <button class="tab active" id="tab-map" data-view="map" type="button">🗺 マップ</button>
       <button class="tab" id="tab-compass" data-view="compass" type="button">🧭 コンパス</button>
+      <button class="tab" id="tab-sonar" data-view="sonar" type="button">📡 ソナー</button>
       <button class="tab" id="tab-ar" data-view="ar" type="button">📷 AR</button>
     </div>
     <div id="status">
@@ -81,6 +82,60 @@
           <span id="max-distance-label">---m</span>
         </div>
         <div id="distance-bar"></div>
+      </div>
+    </section>
+
+    <!-- Sonar view -->
+    <section id="sonar-view" hidden>
+      <!-- レンジセレクター -->
+      <div class="sonar-range-controls">
+        <button type="button" class="range-btn" data-range="250">250m</button>
+        <button type="button" class="range-btn" data-range="500">500m</button>
+        <button type="button" class="range-btn active" data-range="1000">1km</button>
+        <button type="button" class="range-btn" data-range="2500">2.5km</button>
+        <button type="button" class="range-btn" data-range="5000">5km</button>
+      </div>
+
+      <!-- ソナー円形ディスプレイ -->
+      <div id="sonar-container">
+        <canvas id="sonar-canvas"></canvas>
+        <!-- 方位ラベル（固定） -->
+        <div class="sonar-cardinal north">N</div>
+        <div class="sonar-cardinal east">E</div>
+        <div class="sonar-cardinal south">S</div>
+        <div class="sonar-cardinal west">W</div>
+      </div>
+
+      <!-- 標高付き距離バー -->
+      <div id="elevation-distance-bar">
+        <div class="bar-header">
+          <span>0m</span>
+          <span id="sonar-max-distance">1km</span>
+        </div>
+        <!-- 上段：距離バー -->
+        <div class="distance-track">
+          <canvas id="distance-gradient-canvas"></canvas>
+          <div id="distance-markers-container"></div>
+        </div>
+        <!-- 下段：標高断面図 -->
+        <div class="elevation-profile">
+          <canvas id="elevation-profile-canvas"></canvas>
+          <div class="current-position-marker">📍</div>
+        </div>
+      </div>
+
+      <!-- 最寄りCP情報 -->
+      <div id="sonar-nearest-info">
+        <div class="info-name">位置情報を取得中...</div>
+        <div class="info-details"></div>
+      </div>
+
+      <!-- 音響設定トグル -->
+      <div class="sonar-audio-toggle">
+        <label>
+          <input type="checkbox" id="sonar-audio-enable">
+          <span>音響フィードバック</span>
+        </label>
       </div>
     </section>
 

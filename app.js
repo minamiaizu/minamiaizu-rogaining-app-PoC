@@ -94,6 +94,27 @@ let ar = {
   debugMode: false  // デバッグ表示のON/OFF
 };
 
+// Sonar state
+let sonar = {
+  canvas: null,
+  ctx: null,
+  distanceCanvas: null,
+  distanceCtx: null,
+  elevationCanvas: null,
+  elevationCtx: null,
+  size: 400,
+  range: 1000,
+  scanAngle: 0,           // スキャンラインの現在角度（0-360度）
+  scanSpeed: 120,         // 度/秒 (360度/3秒 = 120度/秒)
+  lastUpdateTime: 0,
+  audioEnabled: false,
+  audioContext: null,
+  distanceCache: {},
+  lastCacheTime: 0,
+  lastScanSoundAngle: 0,
+  animationId: null
+};
+
 const STORAGE_KEY = 'rogaining_data';
 
 /* ======== Sample checkpoints (with elevation) ======== */
@@ -170,6 +191,7 @@ function saveToLocalStorage(){
     currentPosition, remainingTime, startTime,
     trackPoints, trackingEnabled,
     selectedCameraId: ar.selectedCameraId,
+    sonarAudioEnabled: sonar.audioEnabled,
     lastSaved: new Date().toISOString()
   };
   try{
@@ -192,6 +214,7 @@ function loadFromLocalStorage(){
     trackingEnabled = data.trackingEnabled !== undefined ? data.trackingEnabled : true;
     photos = data.photos || [];
     ar.selectedCameraId = data.selectedCameraId || null;
+    sonar.audioEnabled = data.sonarAudioEnabled || false;
     debugLog('LocalStorageから復元');
     return true;
   }catch(e){
@@ -521,7 +544,7 @@ function startOrientation() {
       currentHeading = data.heading;
       smoothedHeading = data.heading;
       
-      // デバッグ表示（beta値の状態）
+      // デバッグ表示（betaクの状態）
       if (data.beta !== undefined) {
         devicePitch = data.beta;
         updatePitchIndicator();
@@ -570,7 +593,7 @@ function startDeviceMotion(){
   if (typeof DeviceOrientationEvent !== 'undefined') {
     window.addEventListener('deviceorientation', (e)=>{
       if (e.beta !== null) {
-        // betaは前後の傾き角（-180〜180度、0=水平、+90=前倒し、-90=後ろ倒し）
+        // betaは前後の傾き角（-180～180度、0=水平、+90=前倒し、-90=後ろ倒し）
         devicePitch = e.beta || 0;
         updatePitchIndicator();
       }
@@ -593,7 +616,7 @@ window.updatePitchIndicator = function updatePitchIndicator(){
   // 120°（下向き）= -30°
   const correctedPitch = devicePitch - 90;
   
-  // -30°〜+30°の範囲でクランプ
+  // -30°～+30°の範囲でクランプ
   const clampedPitch = Math.max(-30, Math.min(30, correctedPitch));
   
   // ピッチ角を位置（%）に変換
@@ -759,6 +782,500 @@ function hideTooltip(){
   clearTimeout(tooltipTimeout);
 }
 
+/* ======== Sonar Functions ======== */
+function initSonar() {
+  sonar.canvas = document.getElementById('sonar-canvas');
+  if (!sonar.canvas) return;
+  
+  sonar.ctx = sonar.canvas.getContext('2d');
+  sonar.distanceCanvas = document.getElementById('distance-gradient-canvas');
+  sonar.distanceCtx = sonar.distanceCanvas?.getContext('2d');
+  sonar.elevationCanvas = document.getElementById('elevation-profile-canvas');
+  sonar.elevationCtx = sonar.elevationCanvas?.getContext('2d');
+  
+  resizeSonarCanvas();
+  
+  // 音響システム初期化
+  if (window.AudioContext || window.webkitAudioContext) {
+    initSonarAudio();
+  }
+  
+  // 音響トグルの状態を復元
+  const audioToggle = document.getElementById('sonar-audio-enable');
+  if (audioToggle) {
+    audioToggle.checked = sonar.audioEnabled;
+    audioToggle.addEventListener('change', (e) => {
+      sonar.audioEnabled = e.target.checked;
+      debugLog(`ソナー音響: ${sonar.audioEnabled ? 'ON' : 'OFF'}`);
+      saveToLocalStorage();
+    });
+  }
+  
+  debugLog('ソナーシステム初期化完了');
+}
+
+function resizeSonarCanvas() {
+  const container = document.getElementById('sonar-container');
+  if (!container) return;
+  
+  sonar.size = container.offsetWidth;
+  
+  if (sonar.canvas) {
+    sonar.canvas.width = sonar.size;
+    sonar.canvas.height = sonar.size;
+  }
+  
+  if (sonar.distanceCanvas) {
+    const rect = sonar.distanceCanvas.parentElement.getBoundingClientRect();
+    sonar.distanceCanvas.width = rect.width;
+    sonar.distanceCanvas.height = rect.height;
+  }
+  
+  if (sonar.elevationCanvas) {
+    const rect = sonar.elevationCanvas.parentElement.getBoundingClientRect();
+    sonar.elevationCanvas.width = rect.width;
+    sonar.elevationCanvas.height = rect.height;
+  }
+}
+
+function sonarLoop(timestamp) {
+  if (currentView !== 'sonar') {
+    sonar.animationId = null;
+    return;
+  }
+  
+  // スキャンライン角度更新（3秒で360度）
+  if (sonar.lastUpdateTime === 0) sonar.lastUpdateTime = timestamp;
+  const deltaTime = timestamp - sonar.lastUpdateTime;
+  sonar.scanAngle = (sonar.scanAngle + (sonar.scanSpeed * deltaTime / 1000)) % 360;
+  sonar.lastUpdateTime = timestamp;
+  
+  // 描画
+  drawSonarDisplay();
+  drawDistanceGradientBar();
+  drawElevationProfile();
+  updateSonarNearestInfo();
+  
+  // スキャン音チェック
+  checkScanSound();
+  
+  sonar.animationId = requestAnimationFrame(sonarLoop);
+}
+
+function drawSonarDisplay() {
+  const ctx = sonar.ctx;
+  const w = sonar.canvas.width;
+  const h = sonar.canvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
+  const radius = Math.min(cx, cy) - 20;
+  
+  // 背景クリア
+  ctx.clearRect(0, 0, w, h);
+  
+  // 背景グラデーション
+  const bgGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+  bgGrad.addColorStop(0, 'rgba(66, 153, 225, 0.15)');
+  bgGrad.addColorStop(0.5, 'rgba(49, 130, 206, 0.08)');
+  bgGrad.addColorStop(1, 'rgba(26, 32, 44, 0.05)');
+  ctx.fillStyle = bgGrad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // 距離リング
+  drawDistanceRings(ctx, cx, cy, radius);
+  
+  // スキャンライン
+  drawScanLine(ctx, cx, cy, radius);
+  
+  // チェックポイント
+  drawSonarCheckpoints(ctx, cx, cy, radius);
+  
+  // 中心点
+  ctx.fillStyle = 'rgba(72, 187, 120, 0.8)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function drawDistanceRings(ctx, cx, cy, radius) {
+  const rings = 4;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.lineWidth = 1;
+  
+  for (let i = 1; i <= rings; i++) {
+    const r = (radius / rings) * i;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // 距離ラベル
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.font = '11px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const distLabel = Math.round((sonar.range / rings) * i);
+    const labelText = distLabel >= 1000 ? `${(distLabel/1000).toFixed(1)}km` : `${distLabel}m`;
+    ctx.fillText(labelText, cx, cy - r + 12);
+  }
+}
+
+function drawScanLine(ctx, cx, cy, radius) {
+  const scanArc = 45; // 扇形の開き角度
+  const startAngle = (sonar.scanAngle - 90) * Math.PI / 180;
+  const endAngle = (sonar.scanAngle + scanArc - 90) * Math.PI / 180;
+  
+  // 扇形グラデーション
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+  grad.addColorStop(0, 'rgba(66, 153, 225, 0.4)');
+  grad.addColorStop(0.8, 'rgba(66, 153, 225, 0.2)');
+  grad.addColorStop(1, 'rgba(66, 153, 225, 0)');
+  
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.arc(cx, cy, radius, startAngle, endAngle);
+  ctx.closePath();
+  ctx.fill();
+  
+  // スキャンラインの先端（明るいライン）
+  ctx.strokeStyle = 'rgba(66, 153, 225, 0.8)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  const lineAngle = (sonar.scanAngle - 90) * Math.PI / 180;
+  ctx.lineTo(cx + radius * Math.cos(lineAngle), cy + radius * Math.sin(lineAngle));
+  ctx.stroke();
+}
+
+function drawSonarCheckpoints(ctx, cx, cy, radius) {
+  if (!currentPosition) return;
+  
+  checkpoints.forEach(cp => {
+    // 距離と方位計算
+    const dist = getCachedDistance(cp.id, currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    if (dist > sonar.range) return;
+    
+    const brng = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    const heading = smoothedHeading || 0;
+    const relBearing = (brng - heading + 360) % 360;
+    
+    // 極座標から直交座標へ変換
+    const normalizedDist = dist / sonar.range;
+    const r = normalizedDist * radius;
+    const angle = (relBearing - 90) * Math.PI / 180;
+    const x = cx + r * Math.cos(angle);
+    const y = cy + r * Math.sin(angle);
+    
+    // 光点の色（距離グラデーション）
+    const color = getDistanceColor(dist, 0, sonar.range);
+    
+    // 光点サイズ
+    const baseSize = 12;
+    const size = baseSize * (1 - normalizedDist * 0.5);
+    
+    // グロー効果
+    const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, size * 2);
+    glowGrad.addColorStop(0, color);
+    glowGrad.addColorStop(0.5, color.replace(')', ', 0.5)').replace('hsl', 'hsla'));
+    glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath();
+    ctx.arc(x, y, size * 2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // 光点本体
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // 完了済みの場合、チェックマーク
+    if (completedCheckpoints.has(cp.id)) {
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${size * 1.5}px system-ui`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('✓', x, y);
+    } else {
+      // ポイント数表示
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${size}px system-ui`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(cp.points, x, y);
+    }
+    
+    // スキャンライン通過時のフラッシュ効果
+    const scanDiff = Math.abs(((relBearing - sonar.scanAngle + 540) % 360) - 180);
+    if (scanDiff < 5) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, size + 4, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // 音響フィードバック
+      if (sonar.audioEnabled) {
+        playDetectionBeep(dist);
+      }
+    }
+    
+    // 最寄りCPにパルス効果
+    if (cp.id === getNearestCheckpointId()) {
+      const pulsePhase = (Date.now() % 2000) / 2000;
+      const pulseAlpha = 0.3 + Math.sin(pulsePhase * Math.PI * 2) * 0.2;
+      ctx.strokeStyle = `rgba(255, 255, 255, ${pulseAlpha})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x, y, size + 6, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  });
+}
+
+function drawDistanceGradientBar() {
+  if (!sonar.distanceCtx || !currentPosition) return;
+  
+  const ctx = sonar.distanceCtx;
+  const w = sonar.distanceCanvas.width;
+  const h = sonar.distanceCanvas.height;
+  
+  ctx.clearRect(0, 0, w, h);
+  
+  // グラデーションバー
+  const grad = ctx.createLinearGradient(0, 0, w, 0);
+  grad.addColorStop(0, 'hsl(240, 80%, 50%)');
+  grad.addColorStop(0.25, 'hsl(180, 80%, 50%)');
+  grad.addColorStop(0.5, 'hsl(120, 80%, 50%)');
+  grad.addColorStop(0.75, 'hsl(60, 80%, 50%)');
+  grad.addColorStop(1, 'hsl(0, 80%, 50%)');
+  
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  
+  // CPマーカー
+  const markersContainer = document.getElementById('distance-markers-container');
+  if (markersContainer) {
+    markersContainer.innerHTML = '';
+    
+    checkpoints.forEach(cp => {
+      if (completedCheckpoints.has(cp.id)) return;
+      
+      const dist = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+      if (dist > sonar.range) return;
+      
+      const position = (dist / sonar.range) * 100;
+      const color = getDistanceColor(dist, 0, sonar.range);
+      
+      const marker = document.createElement('div');
+      marker.className = 'distance-marker';
+      marker.textContent = cp.points;
+      marker.style.background = color;
+      marker.style.left = `${position}%`;
+      marker.style.width = '28px';
+      marker.style.height = '28px';
+      marker.style.fontSize = '12px';
+      marker.title = `${cp.name}: ${Math.round(dist)}m`;
+      
+      markersContainer.appendChild(marker);
+    });
+  }
+}
+
+function drawElevationProfile() {
+  if (!sonar.elevationCtx || !currentPosition) return;
+  
+  const ctx = sonar.elevationCtx;
+  const w = sonar.elevationCanvas.width;
+  const h = sonar.elevationCanvas.height;
+  
+  ctx.clearRect(0, 0, w, h);
+  
+  // 背景
+  ctx.fillStyle = 'rgba(26, 32, 44, 0.3)';
+  ctx.fillRect(0, 0, w, h);
+  
+  // 基準線（現在地の標高）
+  const baselineY = h / 2;
+  ctx.strokeStyle = 'rgba(72, 187, 120, 0.5)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(0, baselineY);
+  ctx.lineTo(w, baselineY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  
+  // 各CPの標高バー
+  let distances = [];
+  checkpoints.forEach(cp => {
+    const dist = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    if (dist <= sonar.range && !completedCheckpoints.has(cp.id)) {
+      distances.push({ cp, dist });
+    }
+  });
+  
+  if (distances.length === 0) return;
+  
+  const maxDist = Math.max(...distances.map(d => d.dist));
+  
+  distances.forEach(({ cp, dist }) => {
+    const x = (dist / maxDist) * w;
+    const elevDiff = (cp.elevation || 650) - (currentPosition.elevation || 650);
+    const barHeight = Math.min(Math.abs(elevDiff) / 2, h / 2 - 5);
+    
+    // 登り/下りで色分け
+    const color = elevDiff > 0 
+      ? `rgba(239, 68, 68, ${0.3 + barHeight / h})` 
+      : `rgba(59, 130, 246, ${0.3 + barHeight / h})`;
+    
+    ctx.fillStyle = color;
+    if (elevDiff > 0) {
+      // 登り：上向きバー
+      ctx.fillRect(x - 3, baselineY - barHeight, 6, barHeight);
+    } else {
+      // 下り：下向きバー
+      ctx.fillRect(x - 3, baselineY, 6, barHeight);
+    }
+    
+    // CP番号
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px system-ui';
+    ctx.textAlign = 'center';
+    const textY = elevDiff > 0 ? baselineY - barHeight - 5 : baselineY + barHeight + 12;
+    ctx.fillText(cp.points, x, textY);
+  });
+}
+
+function updateSonarNearestInfo() {
+  const infoName = document.querySelector('#sonar-nearest-info .info-name');
+  const infoDetails = document.querySelector('#sonar-nearest-info .info-details');
+  
+  if (!infoName || !infoDetails || !currentPosition) {
+    if (infoName) infoName.textContent = '位置情報を取得中...';
+    if (infoDetails) infoDetails.innerHTML = '';
+    return;
+  }
+  
+  let nearestCP = null;
+  let nearestDist = Infinity;
+  
+  checkpoints.forEach(cp => {
+    if (completedCheckpoints.has(cp.id)) return;
+    const d = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    if (d < nearestDist) {
+      nearestDist = d;
+      nearestCP = cp;
+    }
+  });
+  
+  if (nearestCP) {
+    const elevDiff = (nearestCP.elevation || 650) - (currentPosition.elevation || 650);
+    const eta = calculateETA(nearestDist, elevDiff);
+    const elevText = elevDiff !== 0 ? ` ${elevDiff > 0 ? '↗+' : '↘'}${Math.abs(Math.round(elevDiff))}m` : '';
+    
+    infoName.textContent = `→ ${nearestCP.name}`;
+    infoDetails.innerHTML = `
+      <span>📏 ${Math.round(nearestDist)}m${elevText}</span>
+      <span>⏱️ ETA: 約${Math.round(eta)}分</span>
+      <span>⭐ ${nearestCP.points}点</span>
+    `;
+  } else {
+    infoName.textContent = 'すべてクリア!';
+    infoDetails.innerHTML = '';
+  }
+}
+
+function getNearestCheckpointId() {
+  if (!currentPosition) return null;
+  
+  let nearestId = null;
+  let nearestDist = Infinity;
+  
+  checkpoints.forEach(cp => {
+    if (completedCheckpoints.has(cp.id)) return;
+    const d = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    if (d < nearestDist) {
+      nearestDist = d;
+      nearestId = cp.id;
+    }
+  });
+  
+  return nearestId;
+}
+
+function getCachedDistance(cpId, lat1, lon1, lat2, lon2) {
+  const now = Date.now();
+  if (now - sonar.lastCacheTime > 1000) {
+    sonar.distanceCache = {};
+    sonar.lastCacheTime = now;
+  }
+  if (!sonar.distanceCache[cpId]) {
+    sonar.distanceCache[cpId] = distance(lat1, lon1, lat2, lon2);
+  }
+  return sonar.distanceCache[cpId];
+}
+
+/* ======== Sonar Audio ======== */
+function initSonarAudio() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  sonar.audioContext = new AudioContext();
+  debugLog('音響システム初期化完了');
+}
+
+function playDetectionBeep(distance) {
+  if (!sonar.audioContext || !sonar.audioEnabled) return;
+  
+  const ctx = sonar.audioContext;
+  const oscillator = ctx.createOscillator();
+  const gainNode = ctx.createGain();
+  
+  // 距離に応じた周波数（近いほど高い音）
+  const freq = 400 + (1 - distance / sonar.range) * 400; // 400-800Hz
+  oscillator.frequency.value = freq;
+  oscillator.type = 'sine';
+  
+  // 音量（近いほど大きい）
+  const volume = (1 - distance / sonar.range) * 0.1;
+  gainNode.gain.value = volume;
+  
+  oscillator.connect(gainNode);
+  gainNode.connect(ctx.destination);
+  
+  oscillator.start();
+  oscillator.stop(ctx.currentTime + 0.05); // 50msの短いビープ
+}
+
+function playScanSound() {
+  if (!sonar.audioContext || !sonar.audioEnabled) return;
+  
+  const ctx = sonar.audioContext;
+  const oscillator = ctx.createOscillator();
+  const gainNode = ctx.createGain();
+  
+  oscillator.frequency.value = 600;
+  oscillator.type = 'sine';
+  gainNode.gain.value = 0.03; // 控えめな音量
+  
+  oscillator.connect(gainNode);
+  gainNode.connect(ctx.destination);
+  
+  oscillator.start();
+  oscillator.stop(ctx.currentTime + 0.02);
+}
+
+function checkScanSound() {
+  if (Math.floor(sonar.scanAngle / 360) > Math.floor(sonar.lastScanSoundAngle / 360)) {
+    playScanSound();
+  }
+  sonar.lastScanSoundAngle = sonar.scanAngle;
+}
+
 /* ======== Tabs ======== */
 function switchView(view){
   // AR機能が利用不可の場合
@@ -770,10 +1287,13 @@ function switchView(view){
   currentView = view;
   document.getElementById('map').hidden = view!=='map';
   document.getElementById('compass-view').hidden = view!=='compass';
+  document.getElementById('sonar-view').hidden = view!=='sonar';
   document.getElementById('ar-view').hidden = view!=='ar';
+  
   for (const b of document.querySelectorAll('#tabs .tab')){
     b.classList.toggle('active', b.dataset.view===view);
   }
+  
   if (view==='compass'){ 
     updateCompassContainerSize(); 
     setTimeout(updateCompassDisplay, 100);
@@ -782,6 +1302,21 @@ function switchView(view){
       orientationManager.setMode('compass');
     }
   }
+  
+  if (view==='sonar'){
+    initSonar();
+    resizeSonarCanvas();
+    sonar.lastUpdateTime = 0;
+    sonar.scanAngle = 0;
+    requestAnimationFrame(sonarLoop);
+    debugLog('ソナービュー開始');
+  } else {
+    if (sonar.animationId) {
+      cancelAnimationFrame(sonar.animationId);
+      sonar.animationId = null;
+    }
+  }
+  
   if (view==='ar'){ 
     startAR(); 
     // ARモードに切り替え
@@ -792,9 +1327,24 @@ function switchView(view){
     stopAR(); 
   }
 }
+
 document.getElementById('tab-map')?.addEventListener('click', ()=>switchView('map'));
 document.getElementById('tab-compass')?.addEventListener('click', ()=>switchView('compass'));
+document.getElementById('tab-sonar')?.addEventListener('click', ()=>switchView('sonar'));
 document.getElementById('tab-ar')?.addEventListener('click', ()=>switchView('ar'));
+
+// Sonar range buttons
+for (const btn of document.querySelectorAll('#sonar-view .range-btn')){
+  btn.addEventListener('click', ()=>{
+    for (const b of document.querySelectorAll('#sonar-view .range-btn')) b.classList.remove('active');
+    btn.classList.add('active');
+    sonar.range = Number(btn.dataset.range);
+    sonar.distanceCache = {};
+    const label = sonar.range >= 1000 ? `${sonar.range/1000}km` : `${sonar.range}m`;
+    document.getElementById('sonar-max-distance').textContent = label;
+    debugLog(`ソナーレンジ: ${label}`);
+  });
+}
 
 /* ======== Camera selection ======== */
 async function getCameraDevices(){
@@ -832,7 +1382,7 @@ async function showCameraSelector(){
         ar.selectedCameraId = cam.deviceId;
         saveToLocalStorage();
         document.body.removeChild(modal);
-        resolve(cam.deviceId); // Promiseを解決
+        resolve(cam.deviceId);
       };
       list.appendChild(btn);
     });
@@ -843,7 +1393,7 @@ async function showCameraSelector(){
     cancelBtn.style.cssText = 'display:block;width:100%;padding:12px;margin:8px 0;background:#cbd5e0;color:#2d3748;border:none;border-radius:8px;cursor:pointer;';
     cancelBtn.onclick = ()=>{
       document.body.removeChild(modal);
-      resolve(null); // キャンセル時もPromiseを解決
+      resolve(null);
     };
     dialog.appendChild(cancelBtn);
     
@@ -947,7 +1497,8 @@ function resizeARCanvas(){
 
 window.addEventListener('resize', ()=>{ 
   updateCompassContainerSize(); 
-  if(currentView==='ar') resizeARCanvas(); 
+  if(currentView==='ar') resizeARCanvas();
+  if(currentView==='sonar') resizeSonarCanvas();
 });
 
 function arLoop(currentTime){
@@ -1067,7 +1618,7 @@ function arLoop(currentTime){
     // 方位計算（iOSでは直接取得可能）
     const b = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
     const actualHeading = orientationManager ? orientationManager.getHeading() : smoothedHeading;
-    let rel = ((b - actualHeading + 540) % 360) - 180; // -180〜180
+    let rel = ((b - actualHeading + 540) % 360) - 180; // -180～180
     
     // 標高差と仰角計算
     const elevDiff = (cp.elevation ?? 650) - (currentPosition.elevation ?? 650);
@@ -1177,9 +1728,9 @@ function arLoop(currentTime){
   requestAnimationFrame(arLoop);
 }
 
-for (const btn of document.querySelectorAll('.range-btn')){
+for (const btn of document.querySelectorAll('.ar-range-selector .range-btn')){
   btn.addEventListener('click', ()=>{
-    for (const b of document.querySelectorAll('.range-btn')) b.classList.remove('active');
+    for (const b of document.querySelectorAll('.ar-range-selector .range-btn')) b.classList.remove('active');
     btn.classList.add('active');
     ar.range = Number(btn.dataset.range);
     ar.distanceCache = {}; // キャッシュクリア
@@ -1227,7 +1778,7 @@ function startARTimer(){
 
 /* ======== Debug mode toggle button ======== */
 const debugToggleBtn = document.createElement('button');
-debugToggleBtn.textContent = '🐛';
+debugToggleBtn.textContent = '🛠';
 debugToggleBtn.style.cssText = 'position:absolute;top:10px;right:10px;background:rgba(0,0,0,.5);color:#fff;border:none;padding:10px 15px;border-radius:8px;cursor:pointer;z-index:1000;';
 debugToggleBtn.onclick = ()=>{
   ar.debugMode = !ar.debugMode;
