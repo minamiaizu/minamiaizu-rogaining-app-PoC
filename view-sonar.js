@@ -1,6 +1,6 @@
 /**
- * SonarView - ソナー表示管理
- * 円形ソナー、距離バー、標高プロファイル管理
+ * SonarView - ソナー表示管理（リファクタリング版）
+ * 依存性注入パターンを使用し、グローバル変数への依存を排除
  */
 
 class SonarView {
@@ -10,6 +10,10 @@ class SonarView {
       scanSpeed: options.scanSpeed ?? 72,
       audioEnabled: options.audioEnabled ?? false
     };
+    
+    // 依存性注入
+    this.stateMgr = options.stateMgr;
+    this.geoMgr = options.geoMgr;
     
     // Canvas要素
     this.canvas = null;
@@ -32,6 +36,10 @@ class SonarView {
     // キャッシュ
     this.distanceCache = {};
     this.lastCacheTime = 0;
+    
+    if (!this.stateMgr || !this.geoMgr) {
+      this.log('⚠️ StateManager/GeoManagerが注入されていません');
+    }
   }
   
   // ========== 初期化 ==========
@@ -144,7 +152,7 @@ class SonarView {
   
   // ========== ソナー円形ディスプレイ ==========
   drawSonarDisplay() {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.stateMgr) return;
     
     const ctx = this.ctx;
     const w = this.canvas.width;
@@ -235,20 +243,17 @@ class SonarView {
   }
   
   drawSonarCheckpoints(ctx, cx, cy, radius) {
-    const currentPosition = window.currentPosition ? window.currentPosition() : null;
-    const checkpoints = window.checkpoints ? window.checkpoints() : [];
-    const completedCheckpoints = window.completedCheckpoints ? window.completedCheckpoints() : new Set();
+    const currentPosition = this.stateMgr?.currentPosition;
+    const checkpoints = this.stateMgr?.checkpoints || [];
+    const completedCheckpoints = this.stateMgr?.completedIds || new Set();
     
-    if (!currentPosition) return;
-    
-    const geoMgr = window.geoMgr;
-    if (!geoMgr) return;
+    if (!currentPosition || !this.geoMgr) return;
     
     checkpoints.forEach(cp => {
       const dist = this.getCachedDistance(cp.id, currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       if (dist > this.options.range) return;
       
-      const brng = geoMgr.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+      const brng = this.geoMgr.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       const heading = window.smoothedHeading || 0;
       const relBearing = (brng - heading + 360) % 360;
       
@@ -314,9 +319,9 @@ class SonarView {
   
   // ========== 距離バー ==========
   drawDistanceGradientBar() {
-    if (!this.distanceCtx) return;
+    if (!this.distanceCtx || !this.stateMgr) return;
     
-    const currentPosition = window.currentPosition;
+    const currentPosition = this.stateMgr.currentPosition;
     if (!currentPosition) return;
     
     const ctx = this.distanceCtx;
@@ -340,19 +345,17 @@ class SonarView {
   
   updateDistanceMarkers(currentPosition) {
     const markersContainer = document.getElementById('distance-markers-container');
-    if (!markersContainer) return;
+    if (!markersContainer || !this.stateMgr || !this.geoMgr) return;
     
     markersContainer.innerHTML = '';
     
-    const checkpoints = window.checkpoints ? window.checkpoints() : [];
-    const completedCheckpoints = window.completedCheckpoints ? window.completedCheckpoints() : new Set();
-    const geoMgr = window.geoMgr;
-    if (!geoMgr) return;
+    const checkpoints = this.stateMgr.checkpoints || [];
+    const completedCheckpoints = this.stateMgr.completedIds || new Set();
     
     checkpoints.forEach(cp => {
       if (completedCheckpoints.has(cp.id)) return;
       
-      const dist = geoMgr.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+      const dist = this.geoMgr.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       if (dist > this.options.range) return;
       
       const position = (dist / this.options.range) * 100;
@@ -374,9 +377,9 @@ class SonarView {
   
   // ========== 標高プロファイル ==========
   drawElevationProfile() {
-    if (!this.elevationCtx) return;
+    if (!this.elevationCtx || !this.stateMgr) return;
     
-    const currentPosition = window.currentPosition;
+    const currentPosition = this.stateMgr.currentPosition;
     if (!currentPosition) return;
     
     const ctx = this.elevationCtx;
@@ -533,14 +536,14 @@ class SonarView {
   }
   
   getVisibleCheckpoints(currentPosition) {
-    const checkpoints = window.checkpoints ? window.checkpoints() : [];
-    const completedCheckpoints = window.completedCheckpoints ? window.completedCheckpoints() : new Set();
-    const geoMgr = window.geoMgr;
-    if (!geoMgr) return [];
+    const checkpoints = this.stateMgr?.checkpoints || [];
+    const completedCheckpoints = this.stateMgr?.completedIds || new Set();
+    
+    if (!this.geoMgr) return [];
     
     let cpData = [];
     checkpoints.forEach(cp => {
-      const dist = geoMgr.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+      const dist = this.geoMgr.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       if (dist <= this.options.range && !completedCheckpoints.has(cp.id)) {
         cpData.push({ cp, dist });
       }
@@ -554,22 +557,18 @@ class SonarView {
     const infoName = document.querySelector('#sonar-nearest-info .info-name');
     const infoDetails = document.querySelector('#sonar-nearest-info .info-details');
     
-    if (!infoName || !infoDetails || !currentPosition) {
+    if (!infoName || !infoDetails || !currentPosition || !this.geoMgr) {
       if (infoName) infoName.textContent = '最寄りのターゲット';
       if (infoDetails) infoDetails.innerHTML = '<span style="color:#718096;">位置情報を取得中...</span>';
       return;
     }
     
-    const geoMgr = window.geoMgr;
-    if (!geoMgr) return;
-    
-    // パラメータで渡されたcheckpointsとcompletedIdsを使用
     let nearestCP = null;
     let nearestDist = Infinity;
     
     checkpoints.forEach(cp => {
       if (completedIds.has(cp.id)) return;
-      const d = geoMgr.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+      const d = this.geoMgr.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       if (d < nearestDist) {
         nearestDist = d;
         nearestCP = cp;
@@ -578,13 +577,13 @@ class SonarView {
     
     if (nearestCP) {
       const elevDiff = (nearestCP.elevation || 650) - (currentPosition.elevation || 650);
-      const eta = geoMgr.calculateETA(nearestDist, elevDiff);
+      const eta = this.geoMgr.calculateETA(nearestDist, elevDiff);
       const elevText = elevDiff !== 0 ? ` ${elevDiff > 0 ? '↗+' : '↘'}${Math.abs(Math.round(elevDiff))}m` : '';
       
       infoName.textContent = '最寄りのターゲット';
       infoDetails.innerHTML = `
         <span style="font-size:18px;color:#667eea;font-weight:800;">${nearestCP.name}</span>
-        <span>📍 ${Math.round(nearestDist)}m${elevText}</span>
+        <span>📏 ${Math.round(nearestDist)}m${elevText}</span>
         <span>⏱️ 約${Math.round(eta)}分</span>
         <span style="background:#667eea;color:#fff;padding:4px 12px;border-radius:12px;">⭐ ${nearestCP.points}点</span>
       `;
@@ -606,20 +605,17 @@ class SonarView {
   }
   
   findClickedCheckpoint(e, type) {
-    const currentPosition = window.currentPosition;
-    if (!currentPosition) return null;
-    
-    const geoMgr = window.geoMgr;
-    if (!geoMgr) return null;
+    const currentPosition = this.stateMgr?.currentPosition;
+    if (!currentPosition || !this.geoMgr) return null;
     
     if (type === 'elevation') {
-      return this.findElevationCheckpoint(e, currentPosition, geoMgr);
+      return this.findElevationCheckpoint(e, currentPosition);
     } else {
-      return this.findSonarCheckpoint(e, currentPosition, geoMgr);
+      return this.findSonarCheckpoint(e, currentPosition);
     }
   }
   
-  findElevationCheckpoint(e, currentPosition, geoMgr) {
+  findElevationCheckpoint(e, currentPosition) {
     const rect = this.elevationCanvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const w = this.elevationCanvas.width;
@@ -644,7 +640,7 @@ class SonarView {
     return nearestCP;
   }
   
-  findSonarCheckpoint(e, currentPosition, geoMgr) {
+  findSonarCheckpoint(e, currentPosition) {
     const rect = this.canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -654,15 +650,15 @@ class SonarView {
     const cy = h / 2;
     const radius = Math.min(cx, cy) - 20;
     
-    const checkpoints = window.checkpoints ? window.checkpoints() : [];
+    const checkpoints = this.stateMgr?.checkpoints || [];
     let nearestCP = null;
     let minDistance = Infinity;
     
     checkpoints.forEach(cp => {
-      const dist = geoMgr.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+      const dist = this.geoMgr.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       if (dist > this.options.range) return;
       
-      const brng = geoMgr.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+      const brng = this.geoMgr.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       const heading = window.smoothedHeading || 0;
       const relBearing = (brng - heading + 360) % 360;
       
@@ -683,15 +679,12 @@ class SonarView {
   }
   
   showDetailModal(cp, dist) {
-    const currentPosition = window.currentPosition;
-    if (!currentPosition) return;
-    
-    const geoMgr = window.geoMgr;
-    if (!geoMgr) return;
+    const currentPosition = this.stateMgr?.currentPosition;
+    if (!currentPosition || !this.geoMgr) return;
     
     const elevDiff = (cp.elevation || 650) - (currentPosition.elevation || 650);
-    const eta = geoMgr.calculateETA(dist, elevDiff);
-    const brng = geoMgr.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    const eta = this.geoMgr.calculateETA(dist, elevDiff);
+    const brng = this.geoMgr.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
     
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:10000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);animation:fadeIn 0.2s;';
@@ -700,7 +693,7 @@ class SonarView {
       <div style="background:#fff;padding:25px;border-radius:16px;max-width:400px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,0.3);">
         <h3 style="margin:0 0 20px 0;font-size:22px;color:#2d3748;font-weight:800;">${cp.name}</h3>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:20px;">
-          ${this.createInfoItem('距離', `${Math.round(dist)}m`, '📍')}
+          ${this.createInfoItem('距離', `${Math.round(dist)}m`, '📏')}
           ${this.createInfoItem('方位', `${Math.round(brng)}°`, '🧭')}
           ${this.createInfoItem('標高', `${cp.elevation || 650}m`, '⛰️')}
           ${this.createInfoItem('標高差', `${elevDiff > 0 ? '↗+' : elevDiff < 0 ? '↘' : ''}${Math.abs(Math.round(elevDiff))}m`, '📊')}
@@ -719,8 +712,8 @@ class SonarView {
       if (typeof switchView === 'function') {
         switchView('map');
       }
-      if (window.geoMgr && window.geoMgr.map) {
-        window.geoMgr.map.setView([cp.lat, cp.lng], 16);
+      if (this.geoMgr && this.geoMgr.map) {
+        this.geoMgr.map.setView([cp.lat, cp.lng], 16);
       }
     };
     
@@ -814,11 +807,10 @@ class SonarView {
       this.distanceCache = {};
       this.lastCacheTime = now;
     }
-    if (!this.distanceCache[cpId]) {
-      const geoMgr = window.geoMgr;
-      this.distanceCache[cpId] = geoMgr ? geoMgr.distance(lat1, lon1, lat2, lon2) : 0;
+    if (!this.distanceCache[cpId] && this.geoMgr) {
+      this.distanceCache[cpId] = this.geoMgr.distance(lat1, lon1, lat2, lon2);
     }
-    return this.distanceCache[cpId];
+    return this.distanceCache[cpId] || 0;
   }
   
   getDistanceColor(distance, minDist, maxDist) {
@@ -866,7 +858,7 @@ if (typeof window !== 'undefined') {
 }
 
 if (typeof debugLog === 'function') {
-  debugLog('✅ SonarView 読み込み完了');
+  debugLog('✅ SonarView (Refactored) 読み込み完了');
 } else {
-  console.log('[SonarView] Loaded');
+  console.log('[SonarView] Refactored version loaded');
 }

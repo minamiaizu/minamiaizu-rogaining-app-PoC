@@ -1,11 +1,13 @@
 /**
- * CompassView - コンパス表示管理
- * コンパス円の描画、チェックポイントマーカー、距離バー管理
+ * CompassView - コンパス表示管理（リファクタリング版）
+ * 依存性注入パターンを使用し、geoMgrから直接メソッドを使用
  */
 
 class CompassView {
-  constructor(containerId) {
-    this.containerId = containerId;
+  constructor(options = {}) {
+    this.containerId = options.containerId || 'compass-view';
+    this.geoMgr = options.geoMgr;
+    
     this.container = null;
     this.compassCircle = null;
     this.compassContainer = null;
@@ -20,6 +22,10 @@ class CompassView {
     // ツールチップ
     this.activeTooltip = null;
     this.tooltipTimeout = null;
+    
+    if (!this.geoMgr) {
+      this.log('⚠️ GeoManagerが注入されていません');
+    }
   }
   
   // ========== 初期化 ==========
@@ -128,7 +134,7 @@ class CompassView {
   
   // ========== チェックポイントマーカー ==========
   updateCheckpointMarkers(currentPosition, heading, checkpoints, completedIds) {
-    if (!this.markersContainer || !currentPosition) return;
+    if (!this.markersContainer || !currentPosition || !this.geoMgr) return;
     
     this.markersContainer.innerHTML = '';
     
@@ -140,7 +146,7 @@ class CompassView {
     let distances = [];
     checkpoints.forEach(cp => {
       if (completedIds.has(cp.id)) return;
-      const d = this._distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+      const d = this.geoMgr.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       distances.push(d);
     });
     
@@ -155,9 +161,9 @@ class CompassView {
     checkpoints.forEach(cp => {
       if (completedIds.has(cp.id)) return;
       
-      const d = this._distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+      const d = this.geoMgr.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       const color = this._getDistanceColor(d, minDistance, maxDistance);
-      const brng = this._bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+      const brng = this.geoMgr.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       
       // 絶対方位で配置（headingを引かない）
       const angle = (brng - 90) * Math.PI / 180;
@@ -193,7 +199,7 @@ class CompassView {
   
   // ========== 距離バー ==========
   updateDistanceBar(currentPosition, heading, checkpoints, completedIds, minDist, maxDist) {
-    if (!this.distanceBar) return;
+    if (!this.distanceBar || !this.geoMgr) return;
     
     this.distanceBar.innerHTML = '';
     
@@ -205,7 +211,7 @@ class CompassView {
     checkpoints.forEach(cp => {
       if (completedIds.has(cp.id)) return;
       
-      const d = this._distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+      const d = this.geoMgr.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       const color = this._getDistanceColor(d, minDist, maxDist);
       const position = maxDist > minDist ? ((d - minDist) / (maxDist - minDist)) * 100 : 50;
       
@@ -269,34 +275,6 @@ class CompassView {
   }
   
   // ========== ユーティリティ ==========
-  _distance(lat1, lon1, lat2, lon2) {
-    const R = 6371e3;
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δφ = (lat2 - lat1) * Math.PI / 180;
-    const Δλ = (lon2 - lon1) * Math.PI / 180;
-    
-    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ/2) * Math.sin(Δλ/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    
-    return R * c;
-  }
-  
-  _bearing(lat1, lon1, lat2, lon2) {
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δλ = (lon2 - lon1) * Math.PI / 180;
-    
-    const y = Math.sin(Δλ) * Math.cos(φ2);
-    const x = Math.cos(φ1) * Math.sin(φ2) -
-              Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-    
-    let θ = Math.atan2(y, x) * 180 / Math.PI;
-    return (θ + 360) % 360;
-  }
-  
   _getDistanceColor(distance, minDist, maxDist) {
     if (maxDist === minDist) return 'hsl(120, 80%, 50%)';
     
@@ -328,7 +306,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ CompassView 読み込み完了');
+  debugLog('✅ CompassView (Refactored) 読み込み完了');
 } else {
-  console.log('[CompassView] Loaded');
+  console.log('[CompassView] Refactored version loaded');
 }
