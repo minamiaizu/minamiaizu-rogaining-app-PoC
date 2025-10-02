@@ -189,7 +189,7 @@ class ARView {
     
     ctx.clearRect(0, 0, w, h);
     
-    const currentPosition = window.currentPosition;
+    const currentPosition = window.currentPosition ? window.currentPosition() : null;
     if (!currentPosition) {
       this.animationId = requestAnimationFrame((t) => this._renderLoop(t));
       return;
@@ -270,8 +270,8 @@ class ARView {
   }
   
   _drawCheckpoints(ctx, w, h, currentPosition) {
-    const checkpoints = window.checkpoints || [];
-    const completedCheckpoints = window.completedCheckpoints || new Set();
+    const checkpoints = window.checkpoints ? window.checkpoints() : [];
+    const completedCheckpoints = window.completedCheckpoints ? window.completedCheckpoints() : new Set();
     
     const sizes = this._getMarkerSizeByRange();
     
@@ -283,7 +283,7 @@ class ARView {
       if (d > this.options.range) return;
       
       // 方位計算
-      const b = this._bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+      const b = window.bearing ? window.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng) : 0;
       const actualHeading = window.smoothedHeading || 0;
       let rel = ((b - actualHeading + 540) % 360) - 180; // -180〜180
       
@@ -311,7 +311,7 @@ class ARView {
       ctx.fill();
       
       // ETAtext計算
-      const eta = this._calculateETA(d, elevDiff);
+      const eta = window.calculateETA ? window.calculateETA(d, elevDiff) : 0;
       const etaText = `~${Math.round(eta)}分`;
       
       // ラベル描画
@@ -375,7 +375,7 @@ class ARView {
     
     checkpoints.forEach(cp => {
       if (completedIds.has(cp.id)) return;
-      const d = this._distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+      const d = window.distance ? window.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng) : 0;
       if (d < nearestDist) {
         nearestDist = d;
         nearestCP = cp;
@@ -384,7 +384,7 @@ class ARView {
     
     if (nearestCP) {
       const elevDiff = (nearestCP.elevation ?? 650) - (currentPosition.elevation ?? 650);
-      const eta = this._calculateETA(nearestDist, elevDiff);
+      const eta = window.calculateETA ? window.calculateETA(nearestDist, elevDiff) : 0;
       const elevText = elevDiff !== 0 ? ` ${elevDiff > 0 ? '↗+' : '↘'}${Math.abs(Math.round(elevDiff))}m` : '';
       nearestInfo.textContent = `→ ${nearestCP.name} ${Math.round(nearestDist)}m${elevText} ETA: 約${Math.round(eta)}分`;
     }
@@ -490,44 +490,9 @@ class ARView {
       this.lastCacheTime = now;
     }
     if (!this.distanceCache[cpId]) {
-      this.distanceCache[cpId] = this._distance(lat1, lon1, lat2, lon2);
+      this.distanceCache[cpId] = window.distance ? window.distance(lat1, lon1, lat2, lon2) : 0;
     }
     return this.distanceCache[cpId];
-  }
-  
-  _distance(lat1, lon1, lat2, lon2) {
-    const R = 6371e3;
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δφ = (lat2 - lat1) * Math.PI / 180;
-    const Δλ = (lon2 - lon1) * Math.PI / 180;
-    
-    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ/2) * Math.sin(Δλ/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    
-    return R * c;
-  }
-  
-  _bearing(lat1, lon1, lat2, lon2) {
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δλ = (lon2 - lon1) * Math.PI / 180;
-    
-    const y = Math.sin(Δλ) * Math.cos(φ2);
-    const x = Math.cos(φ1) * Math.sin(φ2) -
-              Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-    
-    let θ = Math.atan2(y, x) * 180 / Math.PI;
-    return (θ + 360) % 360;
-  }
-  
-  _calculateETA(distance, elevationDiff = 0) {
-    const baseSpeed = 67; // m/min
-    const flatTime = distance / baseSpeed;
-    const elevationPenalty = Math.max(0, elevationDiff) * 0.15;
-    return flatTime + elevationPenalty;
   }
   
   log(message) {
