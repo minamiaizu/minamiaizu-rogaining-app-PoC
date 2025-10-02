@@ -66,6 +66,10 @@ let activeTooltip = null;
 let tooltipTimeout = null;
 let devicePitch = 0; // デバイスの上下傾き角（度）
 let orientationManager = null; // OrientationManager インスタンス
+
+// デバイス判定
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+const AR_AVAILABLE = IS_IOS; // AR機能はiOS専用
 let ar = {
   stream: null,
   ctx: null,
@@ -575,7 +579,8 @@ function startDeviceMotion(){
   }
 }
 
-function updatePitchIndicator(){
+// グローバル関数として定義
+window.updatePitchIndicator = function updatePitchIndicator(){
   // マーカー要素を取得
   const leftMarker = document.querySelector('#pitch-indicator-left .pitch-marker');
   const rightMarker = document.querySelector('#pitch-indicator-right .pitch-marker');
@@ -756,6 +761,12 @@ function hideTooltip(){
 
 /* ======== Tabs ======== */
 function switchView(view){
+  // AR機能が利用不可の場合
+  if (view === 'ar' && !AR_AVAILABLE) {
+    alert('AR機能はiPhone/iPadでのみ利用可能です。\n\n現在お使いのデバイスではマップとコンパス機能をご利用ください。');
+    return; // ビュー切り替えをキャンセル
+  }
+  
   currentView = view;
   document.getElementById('map').hidden = view!=='map';
   document.getElementById('compass-view').hidden = view!=='compass';
@@ -868,18 +879,27 @@ function getCachedDistance(cpId, lat1, lon1, lat2, lon2){
   return ar.distanceCache[cpId];
 }
 
-/* ======== AR (camera + overlay) ======== */
+/* ======== AR (camera + overlay) - iOS専用 ======== */
 async function startAR(){
+  // iOS専用チェック（念のため）
+  if (!AR_AVAILABLE) {
+    debugLog('AR機能は利用できません');
+    return;
+  }
+  
   const video = document.getElementById('camera');
   const canvas = document.getElementById('ar-canvas');
   const ctx = canvas.getContext('2d');
   ar.video = video; ar.canvas = canvas; ar.ctx = ctx;
   
   try{
+    // iOSでは背面カメラを優先
     const constraints = { 
-      video: ar.selectedCameraId 
-        ? { deviceId: { exact: ar.selectedCameraId } }
-        : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, 
+      video: { 
+        facingMode: { exact: 'environment' }, 
+        width: { ideal: 1920 }, 
+        height: { ideal: 1080 } 
+      }, 
       audio: false 
     };
     
@@ -887,27 +907,28 @@ async function startAR(){
     video.srcObject = ar.stream;
     await video.play();
     resizeARCanvas();
-    // startOrientationは一度だけ実行済みなので不要
-    // startDeviceMotionは削除（OrientationManagerが処理）
     startARTimer();
     ar.lastFrameTime = performance.now();
     requestAnimationFrame(arLoop);
-    debugLog('📷 カメラ開始 (AR)');
+    debugLog('📷 カメラ開始 (AR iOS)');
   }catch(e){
     debugLog('カメラ起動に失敗: ' + e.message);
-    const cameras = await getCameraDevices();
-    if (cameras.length > 1){
-      const selectedCamera = await showCameraSelector();
-      if (selectedCamera) {
-        // カメラが選択された場合、再度startARを呼び出す
-        startAR();
-      } else {
-        // キャンセルされた場合、コンパスビューに戻る
-        debugLog('カメラ選択がキャンセルされました');
-        switchView('compass');
-      }
-    } else {
-      alert('カメラの使用許可が必要です');
+    // iOSではフロントカメラにフォールバック
+    try {
+      const fallbackConstraints = { 
+        video: { facingMode: 'user' }, 
+        audio: false 
+      };
+      ar.stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+      video.srcObject = ar.stream;
+      await video.play();
+      resizeARCanvas();
+      startARTimer();
+      ar.lastFrameTime = performance.now();
+      requestAnimationFrame(arLoop);
+      debugLog('📷 フロントカメラで開始 (AR iOS)');
+    } catch(e2) {
+      alert('カメラの使用許可が必要です。\n設定 → Safari → カメラを確認してください。');
       switchView('compass');
     }
   }
@@ -1043,9 +1064,8 @@ function arLoop(currentTime){
     // 距離計算（キャッシュ使用）
     const d = getCachedDistance(cp.id, currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
     
-    // 方位計算（現在の方位を使用）
+    // 方位計算（iOSでは直接取得可能）
     const b = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
-    // OrientationManagerから直接取得する方位を使用
     const actualHeading = orientationManager ? orientationManager.getHeading() : smoothedHeading;
     let rel = ((b - actualHeading + 540) % 360) - 180; // -180〜180
     
@@ -1113,43 +1133,37 @@ function arLoop(currentTime){
   // デバッグ情報を画面に表示（デバッグモードONの時のみ）
   if (ar.debugMode) {
     ctx.fillStyle = 'rgba(0,0,0,0.8)';
-    ctx.fillRect(10, 10, 320, 250);
+    ctx.fillRect(10, 10, 280, 180);
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'left';
     
     let y = 25;
     
-    // OrientationManager情報を追加
+    // iOS専用情報
+    ctx.fillText('📱 iOS AR Mode', 15, y); y += 15;
+    
+    // OrientationManager情報
     if (orientationManager) {
       const debugInfo = orientationManager.getDebugInfo();
-      ctx.fillText(`Platform: ${debugInfo.platform}`, 15, y); y += 15;
-      ctx.fillText(`Mode: ${debugInfo.mode}`, 15, y); y += 15;
+      ctx.fillText(`Heading: ${debugInfo.heading}°`, 15, y); y += 15;
+      ctx.fillText(`Accuracy: ${debugInfo.accuracy}`, 15, y); y += 15;
       ctx.fillText(`Confidence: ${debugInfo.confidence}`, 15, y); y += 15;
-      ctx.fillText(`Gyro: ${debugInfo.gyro}`, 15, y); y += 15;
-      if (debugInfo.gyro === 'OK' && debugInfo.mode === 'ar') {
-        ctx.fillStyle = '#48bb78';
-        ctx.fillText(`Drift corr: ${Math.round(debugInfo.driftCorrection || 0)}°`, 15, y);
-        ctx.fillStyle = '#fff';
-        y += 15;
-      }
+      ctx.fillText(`Pitch: ${debugInfo.beta}°`, 15, y); y += 15;
     }
     
-    ctx.fillText(`Heading(raw): ${Math.round(currentHeading)}°`, 15, y); y += 15;
-    ctx.fillText(`Heading(smooth): ${Math.round(smoothedHeading)}°`, 15, y); y += 15;
-    ctx.fillText(`Pitch(raw): ${Math.round(devicePitch)}°`, 15, y); y += 15;
-    ctx.fillText(`Pitch(adj): ${Math.round(devicePitch - 90)}°`, 15, y); y += 15;
     ctx.fillText(`Range: ${ar.range}m`, 15, y); y += 15;
-    ctx.fillText(`FOV: H=${Math.round(ar.fovH*180/Math.PI)}° V=${Math.round(ar.fovV*180/Math.PI)}°`, 15, y); y += 15;
+    ctx.fillText(`FOV: ${Math.round(ar.fovH*180/Math.PI)}°`, 15, y); y += 15;
     ctx.fillText(`Visible: ${visibleCount}/${checkpoints.length}`, 15, y); y += 15;
     
-    // 個別CP情報
-    ctx.font = '10px monospace';
-    debugInfo.forEach((info, i) => {
-      const status = info.inRange ? 'OK' : 'FAR';
-      ctx.fillText(`${info.name.substring(0,8)} ${info.dist}m R:${info.rel}° E:${info.elev}° ${status}`, 15, y);
-      y += 13;
-    });
+    // 個別CP情報（デバッグ用）
+    if (debugInfo.length > 0) {
+      ctx.font = '10px monospace';
+      debugInfo.slice(0, 2).forEach((info) => {
+        ctx.fillText(`${info.name.substring(0,10)}: ${info.dist}m`, 15, y);
+        y += 13;
+      });
+    }
   }
   
   // 個別CP情報
@@ -1211,20 +1225,10 @@ function startARTimer(){
   }, 1000);
 }
 
-/* ======== Camera selector button ======== */
-const cameraSelectorBtn = document.createElement('button');
-cameraSelectorBtn.textContent = '📹';
-cameraSelectorBtn.style.cssText = 'position:absolute;top:10px;right:10px;background:rgba(0,0,0,.5);color:#fff;border:none;padding:10px 15px;border-radius:8px;cursor:pointer;z-index:1000;';
-cameraSelectorBtn.onclick = async ()=>{
-  stopAR();
-  await showCameraSelector();
-};
-document.getElementById('ar-view')?.appendChild(cameraSelectorBtn);
-
 /* ======== Debug mode toggle button ======== */
 const debugToggleBtn = document.createElement('button');
 debugToggleBtn.textContent = '🐛';
-debugToggleBtn.style.cssText = 'position:absolute;top:10px;right:70px;background:rgba(0,0,0,.5);color:#fff;border:none;padding:10px 15px;border-radius:8px;cursor:pointer;z-index:1000;';
+debugToggleBtn.style.cssText = 'position:absolute;top:10px;right:10px;background:rgba(0,0,0,.5);color:#fff;border:none;padding:10px 15px;border-radius:8px;cursor:pointer;z-index:1000;';
 debugToggleBtn.onclick = ()=>{
   ar.debugMode = !ar.debugMode;
   debugToggleBtn.style.backgroundColor = ar.debugMode ? 'rgba(255,0,0,.5)' : 'rgba(0,0,0,.5)';
@@ -1263,5 +1267,19 @@ document.addEventListener('click', (e) => {
     startTracking();
   }
   document.getElementById('max-distance-label').textContent = '1km';
+  
+  // AR機能の可用性チェック
+  if (!AR_AVAILABLE) {
+    const arTab = document.getElementById('tab-ar');
+    if (arTab) {
+      arTab.style.opacity = '0.4';
+      arTab.style.cursor = 'not-allowed';
+      arTab.innerHTML = '📷 AR<br><span style="font-size:9px">iOS専用</span>';
+    }
+    debugLog('📱 AR機能: iOS専用（現在のデバイス: ' + (IS_IOS ? 'iOS' : 'その他') + '）');
+  } else {
+    debugLog('✅ AR機能: 利用可能（iOS検出）');
+  }
+  
   debugLog('アプリケーション初期化完了');
 })();
