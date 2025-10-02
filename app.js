@@ -518,8 +518,14 @@ function updatePitchIndicator(){
   
   if (!leftMarker || !rightMarker) return;
   
+  // スマホを構えた状態（90°）を0°として補正
+  // 90°（前倒し）= 0°（水平）
+  // 60°（上向き）= +30°
+  // 120°（下向き）= -30°
+  const correctedPitch = devicePitch - 90;
+  
   // -30°〜+30°の範囲でクランプ
-  const clampedPitch = Math.max(-30, Math.min(30, devicePitch));
+  const clampedPitch = Math.max(-30, Math.min(30, correctedPitch));
   
   // ピッチ角を位置（%）に変換
   // +30°が上（0%）、0°が中央（50%）、-30°が下（100%）
@@ -923,8 +929,9 @@ function arLoop(currentTime){
     const horiz = Math.max(1, d);
     const elevAngle = Math.atan2(elevDiff, horiz);
     
-    // デバイスのピッチ角を考慮した画面上の仰角
-    const devicePitchRad = devicePitch * Math.PI / 180;
+    // デバイスのピッチ角を補正（90°を0°として扱う）
+    const correctedPitch = devicePitch - 90;
+    const devicePitchRad = correctedPitch * Math.PI / 180;
     const screenElevAngle = elevAngle - devicePitchRad;
     
     // 視野内判定（画面上の仰角で判定）
@@ -968,17 +975,16 @@ function arLoop(currentTime){
   });
   
   // デバッグ情報を画面に表示
-  if (visibleCount === 0) {
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fillRect(10, 10, 300, 80);
-    ctx.fillStyle = '#000';
-    ctx.font = '12px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(`Heading: ${Math.round(currentHeading)}°`, 15, 25);
-    ctx.fillText(`Pitch: ${Math.round(devicePitch)}°`, 15, 40);
-    ctx.fillText(`Range: ${ar.range}m`, 15, 55);
-    ctx.fillText(`Visible CPs: 0`, 15, 70);
-  }
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(10, 10, 280, 95);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`Heading: ${Math.round(currentHeading)}°`, 15, 28);
+  ctx.fillText(`Pitch(raw): ${Math.round(devicePitch)}°`, 15, 45);
+  ctx.fillText(`Pitch(adj): ${Math.round(devicePitch - 90)}°`, 15, 62);
+  ctx.fillText(`Range: ${ar.range}m`, 15, 79);
+  ctx.fillText(`Visible CPs: ${visibleCount}`, 15, 96);
 
   requestAnimationFrame(arLoop);
 }
