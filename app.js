@@ -856,7 +856,30 @@ function arLoop(currentTime){
   const strip = document.getElementById('heading-strip');
   if (strip) {
     strip.style.backgroundPositionX = `-${currentHeading*2}px`;
+    
+    // 方位文字の位置を更新
+    const labels = strip.querySelectorAll('.heading-label');
+    labels.forEach(label => {
+      const dir = label.getAttribute('data-dir');
+      let angle = 0;
+      if (dir === 'N') angle = 0;
+      else if (dir === 'E') angle = 90;
+      else if (dir === 'S') angle = 180;
+      else if (dir === 'W') angle = 270;
+      
+      // 現在の方位からの相対角度を計算
+      let relativeAngle = angle - currentHeading;
+      while (relativeAngle < -180) relativeAngle += 360;
+      while (relativeAngle > 180) relativeAngle -= 360;
+      
+      // 画面上の位置を計算（1度=2px）
+      const position = w/2 + relativeAngle * 2;
+      label.style.left = `${position}px`;
+    });
   }
+  
+  // ピッチインジケーターを更新
+  updatePitchIndicator();
 
   // 最寄りCPの情報を更新
   let nearestCP = null;
@@ -880,6 +903,9 @@ function arLoop(currentTime){
 
   // レンジ基準のマーカーサイズ取得
   const sizes = getMarkerSizeByRange();
+  
+  // デバッグ用カウンター
+  let visibleCount = 0;
 
   checkpoints.forEach(cp => {
     // 距離計算（キャッシュ使用）
@@ -904,7 +930,12 @@ function arLoop(currentTime){
     // 視野内判定（画面上の仰角で判定）
     const fovH = ar.fovH * 180 / Math.PI;
     const fovV = ar.fovV * 180 / Math.PI;
-    if (Math.abs(rel) >= fovH / 2 || Math.abs(screenElevAngle * 180 / Math.PI) >= fovV / 2) return;
+    const inHorizontal = Math.abs(rel) < fovH / 2;
+    const inVertical = Math.abs(screenElevAngle * 180 / Math.PI) < fovV / 2;
+    
+    if (!inHorizontal || !inVertical) return;
+    
+    visibleCount++;
     
     // 画面座標計算（ピッチ補正済み）
     const x = w/2 + (rel * (Math.PI/180)) / ar.fovH * w;
@@ -935,6 +966,19 @@ function arLoop(currentTime){
     ctx.strokeText(label, x, y + r + 4);
     ctx.fillText(label, x, y + r + 4);
   });
+  
+  // デバッグ情報を画面に表示
+  if (visibleCount === 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillRect(10, 10, 300, 80);
+    ctx.fillStyle = '#000';
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Heading: ${Math.round(currentHeading)}°`, 15, 25);
+    ctx.fillText(`Pitch: ${Math.round(devicePitch)}°`, 15, 40);
+    ctx.fillText(`Range: ${ar.range}m`, 15, 55);
+    ctx.fillText(`Visible CPs: 0`, 15, 70);
+  }
 
   requestAnimationFrame(arLoop);
 }
