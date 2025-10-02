@@ -1,5 +1,5 @@
 /**
- * ARView - AR表示管理（リファクタリング版）
+ * ARView - AR表示管理（デバッグ対応版）
  * iOS/Android/Windows/Linux対応のカメラAR
  * 依存性注入パターンを使用し、グローバル変数への依存を排除
  */
@@ -65,6 +65,9 @@ class ARView {
     if (!this.video || !this.canvas) {
       throw new Error('AR要素が見つかりません');
     }
+    
+    // デバッグボタンを追加
+    this._addDebugButtons();
     
     // カメラ制約（プラットフォーム別）
     const constraints = this._getCameraConstraints();
@@ -158,6 +161,9 @@ class ARView {
     }
     
     this.distanceCache = {};
+    
+    // デバッグボタンを削除
+    this._removeDebugButtons();
     
     this.log('ℹ️ AR停止');
   }
@@ -283,7 +289,13 @@ class ARView {
     const checkpoints = this.stateMgr?.checkpoints || [];
     const completedCheckpoints = this.stateMgr?.completedIds || new Set();
     
+    if (checkpoints.length === 0) {
+      this.log('⚠️ チェックポイントが0件です');
+      return;
+    }
+    
     const sizes = this._getMarkerSizeByRange();
+    let drawnCount = 0;
     
     checkpoints.forEach(cp => {
       // 距離計算（キャッシュ使用）
@@ -296,6 +308,10 @@ class ARView {
       const b = this.geoMgr?.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng) || 0;
       const actualHeading = this.orientationMgr?.getHeading() || 0;
       let rel = ((b - actualHeading + 540) % 360) - 180; // -180～180
+      
+      // FOV外は描画しない
+      const fovHDeg = this.options.fovH * 180 / Math.PI;
+      if (Math.abs(rel) > fovHDeg / 2 + 10) return;
       
       // 標高差と仰角計算
       const elevDiff = (cp.elevation ?? 650) - (currentPosition.elevation ?? 650);
@@ -313,12 +329,27 @@ class ARView {
       const x = w/2 + (relRad / this.options.fovH) * w;
       const y = h/2 - screenElevAngle / this.options.fovV * h;
       
+      // 画面外チェック（マージン付き）
+      if (x < -50 || x > w + 50 || y < -50 || y > h + 50) return;
+      
       // マーカー描画
       const r = sizes.marker / 2;
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI*2);
       ctx.fillStyle = completedCheckpoints.has(cp.id) ? '#48bb78' : '#667eea';
       ctx.fill();
+      
+      // 白い縁
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      
+      // ポイント表示
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${sizes.font}px system-ui`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(cp.points, x, y);
       
       // ETAtext計算
       const eta = this.geoMgr?.calculateETA(d, elevDiff) || 0;
@@ -337,7 +368,16 @@ class ARView {
       
       ctx.strokeText(label, x, y + r + 4);
       ctx.fillText(label, x, y + r + 4);
+      
+      drawnCount++;
     });
+    
+    if (drawnCount === 0 && this.options.debugMode) {
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.font = 'bold 16px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText(`⚠️ 範囲内にCPなし (${this.options.range}m)`, w/2, h/2);
+    }
     
     // デバッグ情報（デバッグモードONの時のみ）
     if (this.options.debugMode) {
@@ -346,34 +386,95 @@ class ARView {
   }
   
   _drawDebugInfo(ctx, w, h) {
-    ctx.fillStyle = 'rgba(0,0,0,0.8)';
-    ctx.fillRect(10, 10, 280, 180);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 11px monospace';
+    ctx.fillStyle = 'rgba(0,0,0,0.85)';
+    ctx.fillRect(10, 10, 300, 240);
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, 10, 300, 240);
+    
+    ctx.fillStyle = '#00ff00';
+    ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'left';
     
-    let y = 25;
+    let y = 30;
+    const lineHeight = 16;
+    
+    ctx.fillStyle = '#00ffff';
+    ctx.fillText('=== ARビュー デバッグ ===', 15, y); y += lineHeight + 5;
+    
+    ctx.fillStyle = '#00ff00';
     
     // プラットフォーム情報
-    ctx.fillText(`📱 Platform: ${this.isIOS ? 'iOS' : this.isAndroid ? 'Android' : 'Other'}`, 15, y); y += 15;
+    ctx.fillText(`📱 Platform: ${this.isIOS ? 'iOS' : this.isAndroid ? 'Android' : 'Other'}`, 15, y); y += lineHeight;
     
     // OrientationManager情報
     if (this.orientationMgr) {
-      const debugInfo = this.orientationMgr.getDebugInfo();
-      ctx.fillText(`Heading: ${debugInfo.heading}°`, 15, y); y += 15;
-      ctx.fillText(`Accuracy: ${debugInfo.accuracy}`, 15, y); y += 15;
-      ctx.fillText(`Confidence: ${debugInfo.confidence}`, 15, y); y += 15;
-      ctx.fillText(`Pitch: ${debugInfo.beta}°`, 15, y); y += 15;
+      const heading = this.orientationMgr.getHeading();
+      const pitch = this.orientationMgr.getPitch();
+      const mode = this.orientationMgr.getMode();
+      
+      ctx.fillText(`Heading: ${Math.round(heading)}°`, 15, y); y += lineHeight;
+      ctx.fillText(`Pitch: ${Math.round(pitch)}° (raw)`, 15, y); y += lineHeight;
+      ctx.fillText(`Corrected: ${Math.round(pitch - 90)}°`, 15, y); y += lineHeight;
+      ctx.fillText(`Mode: ${mode}`, 15, y); y += lineHeight;
     }
     
-    ctx.fillText(`Range: ${this.options.range}m`, 15, y); y += 15;
-    ctx.fillText(`FOV: ${Math.round(this.options.fovH*180/Math.PI)}°`, 15, y); y += 15;
+    // 位置情報
+    const pos = this.stateMgr?.currentPosition;
+    if (pos) {
+      ctx.fillText(`Lat: ${pos.lat.toFixed(6)}`, 15, y); y += lineHeight;
+      ctx.fillText(`Lng: ${pos.lng.toFixed(6)}`, 15, y); y += lineHeight;
+      ctx.fillText(`Elev: ${(pos.elevation || 0).toFixed(1)}m`, 15, y); y += lineHeight;
+    } else {
+      ctx.fillStyle = '#ff6b9d';
+      ctx.fillText('⚠️ 位置情報なし', 15, y); y += lineHeight;
+      ctx.fillStyle = '#00ff00';
+    }
+    
+    // CP情報
+    const cpCount = this.stateMgr?.checkpoints?.length || 0;
+    const completedCount = this.stateMgr?.completedIds?.size || 0;
+    ctx.fillText(`CPs: ${completedCount}/${cpCount}`, 15, y); y += lineHeight;
+    
+    // AR設定
+    ctx.fillText(`Range: ${this.options.range}m`, 15, y); y += lineHeight;
+    ctx.fillText(`FOV: ${Math.round(this.options.fovH*180/Math.PI)}°`, 15, y); y += lineHeight;
+    ctx.fillText(`FPS: ${this.fpsLimit}`, 15, y); y += lineHeight;
   }
   
   // ========== 更新 ==========
-  update(currentPosition, heading, pitch, checkpoints, completedIds) {
+  update(currentPosition, heading, pitch) {
+    // ピッチインジケーター更新
+    this.updatePitchIndicator(pitch);
+    
     // 最寄りCP情報更新
+    const checkpoints = this.stateMgr?.checkpoints || [];
+    const completedIds = this.stateMgr?.completedIds || new Set();
     this.updateNearestInfo(currentPosition, checkpoints, completedIds);
+  }
+  
+  // ========== ピッチインジケーター ==========
+  updatePitchIndicator(pitch) {
+    const leftMarker = document.querySelector('#pitch-indicator-left .pitch-marker');
+    const rightMarker = document.querySelector('#pitch-indicator-right .pitch-marker');
+    
+    if (!leftMarker || !rightMarker) return;
+    
+    // デバイスピッチを補正（90°を0°として扱う）
+    const correctedPitch = pitch - 90;
+    
+    // -30°～+30°の範囲に制限
+    const clampedPitch = Math.max(-30, Math.min(30, correctedPitch));
+    
+    // ピッチインジケーターの位置を計算
+    // ±30°を100%の範囲にマッピング
+    // 0°（水平）が50%の位置
+    // +30°（上向き）が0%の位置
+    // -30°（下向き）が100%の位置
+    const markerTop = 50 - (clampedPitch / 30) * 50;
+    
+    leftMarker.style.top = `${markerTop}%`;
+    rightMarker.style.top = `${markerTop}%`;
   }
   
   updateNearestInfo(currentPosition, checkpoints, completedIds) {
@@ -403,24 +504,6 @@ class ARView {
   // ========== センサーモード更新 ==========
   updateSensorMode(mode) {
     this.sensorMode = mode;
-    
-    // モードに応じたUI更新
-    const indicator = document.querySelector('#ar-view .sensor-mode-indicator');
-    if (indicator) {
-      indicator.textContent = this._getSensorModeLabel(mode);
-      indicator.className = `sensor-mode-indicator mode-${mode}`;
-    }
-  }
-  
-  _getSensorModeLabel(mode) {
-    const labels = {
-      'ios': '🧭 磁北基準（iOS）',
-      'absolute-sensor': '🧭 磁北基準（高精度）',
-      'absolute-event': '🧭 磁北基準',
-      'relative-calibrated': '📍 キャリブレーション済み',
-      'relative': '⚠️ 相対モード（要キャリブレーション）'
-    };
-    return labels[mode] || '❓ 不明';
   }
   
   // ========== タイマー ==========
@@ -482,6 +565,182 @@ class ARView {
   toggleDebugMode() {
     this.options.debugMode = !this.options.debugMode;
     this.log(`ARデバッグモード: ${this.options.debugMode ? 'ON' : 'OFF'}`);
+    return this.options.debugMode;
+  }
+  
+  // ========== デバッグボタン ==========
+  _addDebugButtons() {
+    const arView = document.getElementById('ar-view');
+    if (!arView || arView.querySelector('.debug-buttons')) return;
+    
+    const buttonContainer = document.createElement('div');
+    buttonContainer.className = 'debug-buttons';
+    buttonContainer.style.cssText = `
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      display: flex;
+      gap: 8px;
+      z-index: 1000;
+    `;
+    
+    // デバッグボタン
+    const debugBtn = document.createElement('button');
+    debugBtn.textContent = '🐛';
+    debugBtn.title = 'デバッグ情報を表示/非表示';
+    debugBtn.style.cssText = `
+      background: rgba(0, 0, 0, 0.7);
+      color: #00ff00;
+      border: 2px solid #00ff00;
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.2s;
+      pointer-events: auto;
+    `;
+    debugBtn.onmouseover = () => {
+      debugBtn.style.background = 'rgba(0, 255, 0, 0.2)';
+      debugBtn.style.transform = 'scale(1.1)';
+    };
+    debugBtn.onmouseout = () => {
+      debugBtn.style.background = 'rgba(0, 0, 0, 0.7)';
+      debugBtn.style.transform = 'scale(1)';
+    };
+    debugBtn.onclick = () => {
+      const isEnabled = this.toggleDebugMode();
+      debugBtn.style.color = isEnabled ? '#ffd700' : '#00ff00';
+      debugBtn.style.borderColor = isEnabled ? '#ffd700' : '#00ff00';
+    };
+    
+    // 診断ボタン
+    const diagBtn = document.createElement('button');
+    diagBtn.textContent = '🔍';
+    diagBtn.title = 'AR診断';
+    diagBtn.style.cssText = `
+      background: rgba(0, 0, 0, 0.7);
+      color: #00bfff;
+      border: 2px solid #00bfff;
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.2s;
+      pointer-events: auto;
+    `;
+    diagBtn.onmouseover = () => {
+      diagBtn.style.background = 'rgba(0, 191, 255, 0.2)';
+      diagBtn.style.transform = 'scale(1.1)';
+    };
+    diagBtn.onmouseout = () => {
+      diagBtn.style.background = 'rgba(0, 0, 0, 0.7)';
+      diagBtn.style.transform = 'scale(1)';
+    };
+    diagBtn.onclick = () => this.runDiagnostics();
+    
+    buttonContainer.appendChild(debugBtn);
+    buttonContainer.appendChild(diagBtn);
+    arView.appendChild(buttonContainer);
+    
+    this.log('✅ ARデバッグボタンを追加');
+  }
+  
+  _removeDebugButtons() {
+    const arView = document.getElementById('ar-view');
+    const buttons = arView?.querySelector('.debug-buttons');
+    if (buttons) {
+      arView.removeChild(buttons);
+    }
+  }
+  
+  // ========== 診断機能 ==========
+  runDiagnostics() {
+    const report = [];
+    
+    report.push('🔍 === ARビュー診断レポート ===\n');
+    
+    // 1. 依存マネージャー
+    report.push('【依存性チェック】');
+    report.push(`StateMgr: ${this.stateMgr ? '✅' : '❌'}`);
+    report.push(`GeoMgr: ${this.geoMgr ? '✅' : '❌'}`);
+    report.push(`OrientationMgr: ${this.orientationMgr ? '✅' : '❌'}`);
+    report.push('');
+    
+    // 2. センサー状態
+    report.push('【センサー状態】');
+    if (this.orientationMgr) {
+      const heading = this.orientationMgr.getHeading();
+      const pitch = this.orientationMgr.getPitch();
+      const mode = this.orientationMgr.getMode();
+      
+      report.push(`方位: ${Math.round(heading)}°`);
+      report.push(`ピッチ: ${Math.round(pitch)}° (raw)`);
+      report.push(`補正後: ${Math.round(pitch - 90)}°`);
+      report.push(`モード: ${mode}`);
+      report.push(`キャリブ必要: ${this.orientationMgr.needsCalibration() ? '⚠️ はい' : '✅ いいえ'}`);
+    } else {
+      report.push('❌ OrientationMgrなし');
+    }
+    report.push('');
+    
+    // 3. 位置情報
+    report.push('【位置情報】');
+    const pos = this.stateMgr?.currentPosition;
+    if (pos) {
+      report.push(`✅ 取得済み`);
+      report.push(`緯度: ${pos.lat.toFixed(6)}`);
+      report.push(`経度: ${pos.lng.toFixed(6)}`);
+      report.push(`精度: ±${pos.accuracy?.toFixed(1) || 'N/A'}m`);
+      report.push(`標高: ${(pos.elevation || 0).toFixed(1)}m`);
+    } else {
+      report.push('❌ 未取得');
+    }
+    report.push('');
+    
+    // 4. チェックポイント
+    report.push('【チェックポイント】');
+    const checkpoints = this.stateMgr?.checkpoints || [];
+    const completedIds = this.stateMgr?.completedIds || new Set();
+    report.push(`総数: ${checkpoints.length}`);
+    report.push(`クリア済み: ${completedIds.size}`);
+    
+    if (pos && checkpoints.length > 0) {
+      const inRange = checkpoints.filter(cp => {
+        const d = this.geoMgr?.distance(pos.lat, pos.lng, cp.lat, cp.lng) || Infinity;
+        return d <= this.options.range;
+      });
+      report.push(`範囲内: ${inRange.length} (${this.options.range}m)`);
+      
+      if (inRange.length === 0) {
+        report.push('⚠️ 範囲内にCPなし→レンジを拡大してください');
+      }
+    }
+    report.push('');
+    
+    // 5. カメラ
+    report.push('【カメラ】');
+    report.push(`ストリーム: ${this.stream ? '✅' : '❌'}`);
+    report.push(`ビデオ再生中: ${this.video?.paused === false ? '✅' : '❌'}`);
+    report.push('');
+    
+    // 6. レンダリング
+    report.push('【レンダリング】');
+    report.push(`アニメID: ${this.animationId ? '✅ 動作中' : '❌ 停止'}`);
+    report.push(`FPS制限: ${this.fpsLimit}`);
+    report.push(`Canvas: ${this.canvas?.width}x${this.canvas?.height}`);
+    report.push('');
+    
+    // 7. 設定
+    report.push('【設定】');
+    report.push(`レンジ: ${this.options.range}m`);
+    report.push(`FOV: ${Math.round(this.options.fovH*180/Math.PI)}° × ${Math.round(this.options.fovV*180/Math.PI)}°`);
+    report.push(`デバッグモード: ${this.options.debugMode ? 'ON' : 'OFF'}`);
+    
+    const message = report.join('\n');
+    console.log(message);
+    alert(message);
+    
+    this.log('🔍 診断完了');
   }
   
   // ========== ユーティリティ ==========
@@ -521,7 +780,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ ARView (Refactored) 読み込み完了');
+  debugLog('✅ ARView (Debug Enhanced) 読み込み完了');
 } else {
-  console.log('[ARView] Refactored version loaded');
+  console.log('[ARView] Debug Enhanced version loaded');
 }

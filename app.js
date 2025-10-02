@@ -1,5 +1,5 @@
 /**
- * app.js - リファクタリング版
+ * app.js - リファクタリング版（AR修正版）
  * 依存性注入パターン実装済み
  * グローバル関数はwindow.switchViewのみ残存
  * マネージャーを各ビューのコンストラクタに注入
@@ -158,12 +158,6 @@ async function checkARCapability() {
 function handleOrientationUpdate(data) {
   const { heading, pitch } = data;
   
-  // ピッチインジケーター更新用（AR専用の一時的なグローバル変数）
-  window.devicePitch = pitch;
-  if (typeof window.updatePitchIndicator === 'function') {
-    window.updatePitchIndicator();
-  }
-  
   const currentPosition = stateMgr.currentPosition;
   if (!currentPosition) return;
   
@@ -175,6 +169,7 @@ function handleOrientationUpdate(data) {
   } else if (currentView === 'sonar') {
     sonarView.update(currentPosition, heading, stateMgr.checkpoints, stateMgr.completedIds);
   } else if (currentView === 'ar' && arView) {
+    // ARViewのupdate()メソッドにheading, pitchを渡す
     arView.update(currentPosition, heading, pitch);
     arView.updateSensorMode(data.mode);
   }
