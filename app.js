@@ -943,10 +943,6 @@ function arLoop(currentTime){
       ctx.stroke();
     }
   }
-      ctx.lineTo(x, tapeHeight);
-      ctx.stroke();
-    }
-  }
   
   // ピッチインジケーターを更新
   updatePitchIndicator();
