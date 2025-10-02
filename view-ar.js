@@ -1,6 +1,7 @@
 /**
- * ARView - AR表示管理（マルチプラットフォーム対応）
+ * ARView - AR表示管理（リファクタリング版）
  * iOS/Android/Windows/Linux対応のカメラAR
+ * 依存性注入パターンを使用し、グローバル変数への依存を排除
  */
 
 class ARView {
@@ -18,6 +19,11 @@ class ARView {
       timerDuration: options.timerDuration ?? 300,
       debugMode: false
     };
+    
+    // 依存性注入
+    this.stateMgr = options.stateMgr;
+    this.geoMgr = options.geoMgr;
+    this.orientationMgr = options.orientationMgr;
     
     // カメラ・キャンバス
     this.stream = null;
@@ -44,6 +50,10 @@ class ARView {
     // プラットフォーム検出
     this.isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
     this.isAndroid = /Android/.test(navigator.userAgent);
+    
+    if (!this.stateMgr || !this.geoMgr || !this.orientationMgr) {
+      this.log('⚠️ StateManager/GeoManager/OrientationManagerが注入されていません');
+    }
   }
   
   // ========== 開始 ==========
@@ -149,7 +159,7 @@ class ARView {
     
     this.distanceCache = {};
     
-    this.log('⏹️ AR停止');
+    this.log('ℹ️ AR停止');
   }
   
   // ========== キャンバスリサイズ ==========
@@ -189,7 +199,7 @@ class ARView {
     
     ctx.clearRect(0, 0, w, h);
     
-    const currentPosition = window.currentPosition ? window.currentPosition() : null;
+    const currentPosition = this.stateMgr?.currentPosition;
     if (!currentPosition) {
       this.animationId = requestAnimationFrame((t) => this._renderLoop(t));
       return;
@@ -221,7 +231,7 @@ class ARView {
     const fovHDeg = this.options.fovH * 180 / Math.PI;
     const displayRange = fovHDeg / 2 + 10;
     
-    const heading = window.smoothedHeading || 0;
+    const heading = this.orientationMgr?.getHeading() || 0;
     
     // 5度刻みで目盛りを描画
     for (let offset = -displayRange; offset <= displayRange; offset += 5) {
@@ -270,8 +280,8 @@ class ARView {
   }
   
   _drawCheckpoints(ctx, w, h, currentPosition) {
-    const checkpoints = window.checkpoints ? window.checkpoints() : [];
-    const completedCheckpoints = window.completedCheckpoints ? window.completedCheckpoints() : new Set();
+    const checkpoints = this.stateMgr?.checkpoints || [];
+    const completedCheckpoints = this.stateMgr?.completedIds || new Set();
     
     const sizes = this._getMarkerSizeByRange();
     
@@ -283,9 +293,9 @@ class ARView {
       if (d > this.options.range) return;
       
       // 方位計算
-      const b = window.bearing ? window.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng) : 0;
-      const actualHeading = window.smoothedHeading || 0;
-      let rel = ((b - actualHeading + 540) % 360) - 180; // -180〜180
+      const b = this.geoMgr?.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng) || 0;
+      const actualHeading = this.orientationMgr?.getHeading() || 0;
+      let rel = ((b - actualHeading + 540) % 360) - 180; // -180～180
       
       // 標高差と仰角計算
       const elevDiff = (cp.elevation ?? 650) - (currentPosition.elevation ?? 650);
@@ -293,7 +303,7 @@ class ARView {
       const elevAngle = Math.atan2(elevDiff, horiz);
       
       // デバイスのピッチ角を補正（90°を0°として扱う）
-      const devicePitch = window.devicePitch || 0;
+      const devicePitch = this.orientationMgr?.getPitch() || 0;
       const correctedPitch = devicePitch - 90;
       const devicePitchRad = correctedPitch * Math.PI / 180;
       const screenElevAngle = elevAngle - devicePitchRad;
@@ -311,7 +321,7 @@ class ARView {
       ctx.fill();
       
       // ETAtext計算
-      const eta = window.calculateETA ? window.calculateETA(d, elevDiff) : 0;
+      const eta = this.geoMgr?.calculateETA(d, elevDiff) || 0;
       const etaText = `~${Math.round(eta)}分`;
       
       // ラベル描画
@@ -348,8 +358,8 @@ class ARView {
     ctx.fillText(`📱 Platform: ${this.isIOS ? 'iOS' : this.isAndroid ? 'Android' : 'Other'}`, 15, y); y += 15;
     
     // OrientationManager情報
-    if (window.orientationManager) {
-      const debugInfo = window.orientationManager.getDebugInfo();
+    if (this.orientationMgr) {
+      const debugInfo = this.orientationMgr.getDebugInfo();
       ctx.fillText(`Heading: ${debugInfo.heading}°`, 15, y); y += 15;
       ctx.fillText(`Accuracy: ${debugInfo.accuracy}`, 15, y); y += 15;
       ctx.fillText(`Confidence: ${debugInfo.confidence}`, 15, y); y += 15;
@@ -375,7 +385,7 @@ class ARView {
     
     checkpoints.forEach(cp => {
       if (completedIds.has(cp.id)) return;
-      const d = window.distance ? window.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng) : 0;
+      const d = this.geoMgr?.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng) || 0;
       if (d < nearestDist) {
         nearestDist = d;
         nearestCP = cp;
@@ -384,7 +394,7 @@ class ARView {
     
     if (nearestCP) {
       const elevDiff = (nearestCP.elevation ?? 650) - (currentPosition.elevation ?? 650);
-      const eta = window.calculateETA ? window.calculateETA(nearestDist, elevDiff) : 0;
+      const eta = this.geoMgr?.calculateETA(nearestDist, elevDiff) || 0;
       const elevText = elevDiff !== 0 ? ` ${elevDiff > 0 ? '↗+' : '↘'}${Math.abs(Math.round(elevDiff))}m` : '';
       nearestInfo.textContent = `→ ${nearestCP.name} ${Math.round(nearestDist)}m${elevText} ETA: 約${Math.round(eta)}分`;
     }
@@ -489,10 +499,10 @@ class ARView {
       this.distanceCache = {};
       this.lastCacheTime = now;
     }
-    if (!this.distanceCache[cpId]) {
-      this.distanceCache[cpId] = window.distance ? window.distance(lat1, lon1, lat2, lon2) : 0;
+    if (!this.distanceCache[cpId] && this.geoMgr) {
+      this.distanceCache[cpId] = this.geoMgr.distance(lat1, lon1, lat2, lon2);
     }
-    return this.distanceCache[cpId];
+    return this.distanceCache[cpId] || 0;
   }
   
   log(message) {
@@ -511,7 +521,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ ARView (Multi-Platform) 読み込み完了');
+  debugLog('✅ ARView (Refactored) 読み込み完了');
 } else {
-  console.log('[ARView] Multi-Platform version loaded');
+  console.log('[ARView] Refactored version loaded');
 }
