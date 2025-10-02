@@ -1,3 +1,10 @@
+/**
+ * app.js - リファクタリング版
+ * 依存性注入パターン実装済み
+ * グローバル関数はwindow.switchViewのみ残存
+ * マネージャーを各ビューのコンストラクタに注入
+ */
+
 /* ======== Service Worker ======== */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
