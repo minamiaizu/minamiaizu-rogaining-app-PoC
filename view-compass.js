@@ -132,6 +132,10 @@ class CompassView {
     
     this.markersContainer.innerHTML = '';
     
+    // マーカーコンテナ全体を方位盤と同じ角度で回転
+    const normalizedHeading = ((heading % 360) + 360) % 360;
+    this.markersContainer.style.transform = `rotate(${normalizedHeading}deg)`;
+    
     // 距離を計算
     let distances = [];
     checkpoints.forEach(cp => {
@@ -155,9 +159,8 @@ class CompassView {
       const color = this._getDistanceColor(d, minDistance, maxDistance);
       const brng = this._bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       
-      // 相対方位計算
-      const relBearing = (brng - heading + 360) % 360;
-      const angle = (relBearing - 90) * Math.PI / 180;
+      // 絶対方位で配置（headingを引かない）
+      const angle = (brng - 90) * Math.PI / 180;
       const x = centerPoint + radius * Math.cos(angle);
       const y = centerPoint + radius * Math.sin(angle);
       
@@ -167,6 +170,10 @@ class CompassView {
       marker.style.background = color;
       marker.style.left = x + 'px';
       marker.style.top = y + 'px';
+      
+      // マーカー内の数字を水平に保つため、逆回転を適用
+      marker.style.transform = `rotate(-${normalizedHeading}deg)`;
+      
       marker.title = `${cp.name}: ${Math.round(d)}m`;
       
       marker.addEventListener('click', (e) => {
