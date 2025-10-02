@@ -1,12 +1,8 @@
 /**
- * ARView - AR表示管理(画面向き対応版・センサー入れ替え試験版)
+ * ARView - AR表示管理（画面向き対応版）
  * Portrait/Landscape両対応のピッチ補正
  * iOS/Android/Windows/Linux対応のカメラAR
  * 依存性注入パターンを使用し、グローバル変数への依存を排除
- * 
- * 【試験的変更】
- * ポートレート時: gammaを参照
- * ランドスケープ時: betaを参照
  */
 
 class ARView {
@@ -391,10 +387,10 @@ class ARView {
   
   _drawDebugInfo(ctx, w, h) {
     ctx.fillStyle = 'rgba(0,0,0,0.85)';
-    ctx.fillRect(10, 10, 320, 320);
+    ctx.fillRect(10, 10, 320, 280);
     ctx.strokeStyle = '#00ff00';
     ctx.lineWidth = 2;
-    ctx.strokeRect(10, 10, 320, 320);
+    ctx.strokeRect(10, 10, 320, 280);
     
     ctx.fillStyle = '#00ff00';
     ctx.font = 'bold 12px monospace';
@@ -413,7 +409,7 @@ class ARView {
     
     // 画面の向き
     const orientation = this._getScreenOrientation();
-    ctx.fillText(`🔄 Orientation: ${orientation}`, 15, y); y += lineHeight;
+    ctx.fillText(`📐 Orientation: ${orientation}`, 15, y); y += lineHeight;
     y += 5;
     
     // OrientationManager情報
@@ -430,14 +426,6 @@ class ARView {
       const corrected = this._getScreenCorrectedPitch();
       ctx.fillStyle = '#ffd700';
       ctx.fillText(`>>> Corrected: ${Math.round(corrected)}°`, 15, y); y += lineHeight;
-      
-      // 【追加】どのセンサーを使用しているか表示
-      if (orientation.includes('portrait')) {
-        ctx.fillText(`>>> Using: gamma (試験版)`, 15, y); y += lineHeight;
-      } else {
-        ctx.fillText(`>>> Using: beta (試験版)`, 15, y); y += lineHeight;
-      }
-      
       ctx.fillStyle = '#00ff00';
       
       ctx.fillText(`Mode: ${mode}`, 15, y); y += lineHeight;
@@ -524,9 +512,9 @@ class ARView {
   }
   
   /**
-   * 画面の向きに応じてピッチを補正（試験的に入れ替え）
-   * Portrait: gammaを使用（X軸周り）
-   * Landscape: betaを使用（Y軸周り）
+   * 画面の向きに応じてピッチを補正
+   * Portrait: betaを使用（Y軸周り）
+   * Landscape: gammaを使用（X軸周り）
    */
   _getScreenCorrectedPitch() {
     const orientation = this._getScreenOrientation();
@@ -536,34 +524,34 @@ class ARView {
     let correctedPitch;
     
     if (orientation.includes('portrait')) {
-      // 縦持ち: gammaを使用（デバイスのX軸周り）【試験版】
-      // デバイス左傾き = gamma < 0
-      // デバイス水平 = gamma = 0
-      // デバイス右傾き = gamma > 0
-      // 試験的に、gammaをそのままピッチとして使用
-      correctedPitch = roll;
-      
-    } else if (orientation === 'landscape-primary') {
-      // 横持ち（右回転90°、ホームボタンが右）【試験版】
-      // この向きでは、betaが前後傾きになる
-      // デバイス垂直上向き = beta = 0
-      // デバイス水平（カメラ前向き） = beta = 90
-      // デバイス垂直下向き = beta = 180
+      // 縦持ち: betaを使用（デバイスのY軸周り）
+      // デバイス垂直上向き = 0°
+      // デバイス水平（カメラ前向き） = 90°
+      // デバイス垂直下向き = 180°
       // → 90°を0°にするため、90を引く
       correctedPitch = pitch - 90;
       
+    } else if (orientation === 'landscape-primary') {
+      // 横持ち（右回転90°、ホームボタンが右）
+      // この向きでは、gammaが前後傾きになる
+      // デバイス上向き = gamma > 0
+      // デバイス水平 = gamma = 0
+      // デバイス下向き = gamma < 0
+      // → そのまま使用（符号はそのまま）
+      correctedPitch = roll;
+      
     } else if (orientation === 'landscape-secondary') {
-      // 横持ち（左回転-90°/270°、ホームボタンが左）【試験版】
-      // この向きでは、betaが前後傾きになる
-      // デバイス垂直上向き = beta = 0
-      // デバイス水平（カメラ前向き） = beta = 90
-      // デバイス垂直下向き = beta = 180
-      // → 90°を0°にし、さらに符号を反転（向きが逆のため）
-      correctedPitch = -(pitch - 90);
+      // 横持ち（左回転-90°/270°、ホームボタンが左）
+      // この向きでは、gammaが前後傾きになる
+      // デバイス上向き = gamma < 0
+      // デバイス水平 = gamma = 0
+      // デバイス下向き = gamma > 0
+      // → 符号を反転
+      correctedPitch = -roll;
       
     } else {
       // デフォルト: portraitとして扱う
-      correctedPitch = roll;
+      correctedPitch = pitch - 90;
     }
     
     return correctedPitch;
@@ -678,7 +666,7 @@ class ARView {
     
     // デバッグボタン
     const debugBtn = document.createElement('button');
-    debugBtn.textContent = '🛠';
+    debugBtn.textContent = '🐛';
     debugBtn.title = 'デバッグ情報を表示/非表示';
     debugBtn.style.cssText = `
       background: rgba(0, 0, 0, 0.7);
@@ -749,7 +737,7 @@ class ARView {
   runDiagnostics() {
     const report = [];
     
-    report.push('🔍 === ARビュー診断レポート（試験版） ===\n');
+    report.push('🔍 === ARビュー診断レポート ===\n');
     
     // 1. 依存マネージャー
     report.push('【依存性チェック】');
@@ -764,7 +752,7 @@ class ARView {
     report.push(`Orientation: ${orientation}`);
     report.push('');
     
-    // 3. センサー状態（試験版の表記）
+    // 3. センサー状態
     report.push('【センサー状態】');
     if (this.orientationMgr) {
       const heading = this.orientationMgr.getHeading();
@@ -777,13 +765,6 @@ class ARView {
       report.push(`ピッチ(beta): ${Math.round(pitch)}°`);
       report.push(`ロール(gamma): ${Math.round(roll)}°`);
       report.push(`>>> 補正後ピッチ: ${Math.round(corrected)}° <<<`);
-      
-      if (orientation.includes('portrait')) {
-        report.push(`>>> 使用中: gamma（試験版） <<<`);
-      } else {
-        report.push(`>>> 使用中: beta（試験版） <<<`);
-      }
-      
       report.push(`モード: ${mode}`);
       report.push(`キャリブ必要: ${this.orientationMgr.needsCalibration() ? '⚠️ はい' : '✅ いいえ'}`);
     } else {
@@ -848,7 +829,7 @@ class ARView {
     console.log(message);
     alert(message);
     
-    this.log('🔍 診断完了（試験版）');
+    this.log('🔍 診断完了');
   }
   
   // ========== ユーティリティ ==========
@@ -888,7 +869,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ ARView (試験版: Portrait=gamma, Landscape=beta) 読み込み完了');
+  debugLog('✅ ARView (Screen Orientation Fixed) 読み込み完了');
 } else {
-  console.log('[ARView] Experimental version with swapped sensor references loaded');
+  console.log('[ARView] Screen Orientation Fixed version loaded');
 }
