@@ -61,7 +61,6 @@ let currentView = 'map';
 let compassContainerSize = 400;
 let currentHeading = 0;
 let smoothedHeading = 0; // 平滑化された方位角
-let rotationTotal = 0;
 let activeTooltip = null;
 let tooltipTimeout = null;
 let devicePitch = 0; // デバイスの上下傾き角（度）
@@ -511,25 +510,12 @@ function drawCompassTicks(){
 function setHeading(deg){
   // OrientationManager経由で処理される
   if (orientationManager) {
-    // 手動設定は無視（OrientationManagerが管理）
-    return;
+    return; // OrientationManagerが管理
   }
   
   // フォールバック（OrientationManagerが初期化されていない場合）
   currentHeading = (deg+360)%360;
-  
-  // 平滑化フィルタ（指数移動平均）を適用
-  // alpha = 0.08 → 92%過去、8%現在（滑らか）
-  const alpha = 0.08;
-  
-  // 角度の差分を計算（最短経路）
-  let diff = currentHeading - smoothedHeading;
-  if (diff > 180) diff -= 360;
-  else if (diff < -180) diff += 360;
-  
-  // 平滑化された方位角を更新
-  smoothedHeading = (smoothedHeading + alpha * diff + 360) % 360;
-  
+  smoothedHeading = currentHeading; // フォールバック時は平滑化なし
   updateCompassDisplay();
 }
 
@@ -633,27 +619,23 @@ function updateCompassDisplay(){
   const compassCircle = document.getElementById('compass-circle');
   const headingDisplay = document.getElementById('heading-display');
   
+  // 方位データを取得（OrientationManagerまたはフォールバック）
+  const heading = orientationManager ? orientationManager.getHeading() : smoothedHeading;
+  
   if (compassCircle){
-    let normalizedHeading = currentHeading % 360;
-    if (normalizedHeading < 0) normalizedHeading += 360;
-    let currentRotation = rotationTotal % 360;
-    if (currentRotation < 0) currentRotation += 360;
-    let diff = normalizedHeading - currentRotation;
-    if (diff > 180) diff -= 360;
-    else if (diff < -180) diff += 360;
-    rotationTotal += diff;
-    compassCircle.style.transform = `rotate(${rotationTotal}deg)`;
+    // ソナー方式：直接回転（北が常に上）
+    compassCircle.style.transform = `rotate(${-heading}deg)`;
   }
   
   if (headingDisplay){
-    headingDisplay.textContent = `方位: ${Math.round(currentHeading)}°`;
+    headingDisplay.textContent = `方位: ${Math.round(heading)}°`;
   }
   
-  updateCheckpointMarkers();
+  updateCheckpointMarkers(heading);
 }
 
 /* ======== Checkpoint markers on compass ======== */
-function updateCheckpointMarkers(){
+function updateCheckpointMarkers(heading){
   if (!currentPosition) return;
   const markersContainer = document.getElementById('checkpoint-markers');
   if (!markersContainer) return;
@@ -679,22 +661,19 @@ function updateCheckpointMarkers(){
     const color = getDistanceColor(d, minDistance, maxDistance);
     const b = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
     
+    // ソナー方式の座標変換
+    const relativeBearing = (b - heading + 360) % 360;
+    const angle = (relativeBearing - 90) * Math.PI / 180;
+    const x = centerPoint + radius * Math.cos(angle);
+    const y = centerPoint + radius * Math.sin(angle);
+    
     const marker = document.createElement('div');
     marker.className = 'checkpoint-marker';
     marker.textContent = cp.points;
     marker.style.background = color;
-    
-    // 絶対方位を使用し、コンパス円の回転を補正
-    // b = 絶対方位（北=0度）
-    // - currentHeading = コンパス円の回転を打ち消す
-    // - 90 = Canvas座標変換（北を上に）
-    const angle = (b - currentHeading - 90) * Math.PI / 180;
-    const x = centerPoint + radius * Math.cos(angle);
-    const y = centerPoint + radius * Math.sin(angle);
-    
     marker.style.left = x + 'px';
     marker.style.top = y + 'px';
-    marker.style.transform = `rotate(${-rotationTotal}deg)`;
+    // マーカー自体は回転不要（コンパス円が回転するため）
     
     marker.title = `${cp.name}: ${Math.round(d)}m`;
     
@@ -711,7 +690,6 @@ function updateCheckpointMarkers(){
   
   updateDistanceBar(minDistance, maxDistance);
 }
-
 /* ======== Distance bar ======== */
 function updateDistanceBar(minDist, maxDist){
   if (!currentPosition) return;
