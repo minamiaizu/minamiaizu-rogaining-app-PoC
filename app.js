@@ -70,8 +70,8 @@ let ar = {
   ctx: null,
   canvas: null,
   video: null,
-  fovH: 60 * Math.PI/180,
-  fovV: 45 * Math.PI/180,
+  fovH: 80 * Math.PI/180,  // 水平視野角を60→80度に拡大
+  fovV: 60 * Math.PI/180,  // 垂直視野角を45→60度に拡大
   range: 1000,
   timerId: null,
   secondsLeft: 300,
@@ -874,30 +874,57 @@ function arLoop(currentTime){
 
   if (!currentPosition){ requestAnimationFrame(arLoop); return; }
 
-  // 方位テープ更新
-  const strip = document.getElementById('heading-strip');
-  if (strip) {
-    strip.style.backgroundPositionX = `-${smoothedHeading*2}px`;
+  // 方位テープをCanvasに描画
+  const tapeHeight = 50;
+  const tapeY = 0;
+  
+  // 半透明背景
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, tapeY, w, tapeHeight);
+  
+  // 方位目盛りとラベルを描画
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 16px system-ui';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  // 画面に表示される範囲の方位角を計算（±90度）
+  for (let offset = -90; offset <= 90; offset += 5) {
+    const angle = (smoothedHeading + offset + 360) % 360;
+    const x = w/2 + offset * (w / 120); // 120度分を画面幅に表示
     
-    // 方位文字の位置を更新
-    const labels = strip.querySelectorAll('.heading-label');
-    labels.forEach(label => {
-      const dir = label.getAttribute('data-dir');
-      let angle = 0;
-      if (dir === 'N') angle = 0;
-      else if (dir === 'E') angle = 90;
-      else if (dir === 'S') angle = 180;
-      else if (dir === 'W') angle = 270;
-      
-      // 現在の方位からの相対角度を計算
-      let relativeAngle = angle - smoothedHeading;
-      while (relativeAngle < -180) relativeAngle += 360;
-      while (relativeAngle > 180) relativeAngle -= 360;
-      
-      // 画面上の位置を計算（1度=2px）
-      const position = w/2 + relativeAngle * 2;
-      label.style.left = `${position}px`;
-    });
+    // 主要方位（N/E/S/W）
+    if (angle === 0) {
+      ctx.fillStyle = '#ff3030';
+      ctx.font = 'bold 20px system-ui';
+      ctx.fillText('N', x, tapeHeight/2);
+      // 赤い線
+      ctx.strokeStyle = 'rgba(255,48,48,0.8)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x, tapeHeight - 15);
+      ctx.lineTo(x, tapeHeight);
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 16px system-ui';
+    } else if (angle === 90) {
+      ctx.fillText('E', x, tapeHeight/2);
+    } else if (angle === 180) {
+      ctx.fillText('S', x, tapeHeight/2);
+    } else if (angle === 270) {
+      ctx.fillText('W', x, tapeHeight/2);
+    }
+    
+    // 目盛り線（5度刻み）
+    if (offset % 5 === 0 && angle % 90 !== 0) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = offset % 15 === 0 ? 2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(x, tapeHeight - 10);
+      ctx.lineTo(x, tapeHeight);
+      ctx.stroke();
+    }
   }
   
   // ピッチインジケーターを更新
@@ -928,13 +955,11 @@ function arLoop(currentTime){
   
   // デバッグ用カウンター
   let visibleCount = 0;
+  let debugInfo = [];
 
   checkpoints.forEach(cp => {
     // 距離計算（キャッシュ使用）
     const d = getCachedDistance(cp.id, currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
-    
-    // レンジ外は早期リターン
-    if (d > ar.range) return;
     
     // 方位計算（平滑化された方位角を使用）
     const b = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
@@ -955,6 +980,23 @@ function arLoop(currentTime){
     const fovV = ar.fovV * 180 / Math.PI;
     const inHorizontal = Math.abs(rel) < fovH / 2;
     const inVertical = Math.abs(screenElevAngle * 180 / Math.PI) < fovV / 2;
+    
+    // デバッグ情報を収集
+    if (debugInfo.length < 3) { // 最初の3つのCPのみ
+      const inRange = d <= ar.range;
+      debugInfo.push({
+        name: cp.name,
+        dist: Math.round(d),
+        rel: Math.round(rel),
+        elev: Math.round(screenElevAngle * 180 / Math.PI),
+        inRange,
+        inH: inHorizontal,
+        inV: inVertical
+      });
+    }
+    
+    // レンジ外は早期リターン
+    if (d > ar.range) return;
     
     if (!inHorizontal || !inVertical) return;
     
@@ -991,17 +1033,28 @@ function arLoop(currentTime){
   });
   
   // デバッグ情報を画面に表示
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.fillRect(10, 10, 280, 110);
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillRect(10, 10, 300, 200);
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'left';
-  ctx.fillText(`Heading(raw): ${Math.round(currentHeading)}°`, 15, 25);
-  ctx.fillText(`Heading(smooth): ${Math.round(smoothedHeading)}°`, 15, 40);
-  ctx.fillText(`Pitch(raw): ${Math.round(devicePitch)}°`, 15, 55);
-  ctx.fillText(`Pitch(adj): ${Math.round(devicePitch - 90)}°`, 15, 70);
-  ctx.fillText(`Range: ${ar.range}m`, 15, 85);
-  ctx.fillText(`Visible CPs: ${visibleCount}`, 15, 100);
+  
+  let y = 25;
+  ctx.fillText(`Heading(raw): ${Math.round(currentHeading)}°`, 15, y); y += 15;
+  ctx.fillText(`Heading(smooth): ${Math.round(smoothedHeading)}°`, 15, y); y += 15;
+  ctx.fillText(`Pitch(raw): ${Math.round(devicePitch)}°`, 15, y); y += 15;
+  ctx.fillText(`Pitch(adj): ${Math.round(devicePitch - 90)}°`, 15, y); y += 15;
+  ctx.fillText(`Range: ${ar.range}m`, 15, y); y += 15;
+  ctx.fillText(`FOV: H=${Math.round(ar.fovH*180/Math.PI)}° V=${Math.round(ar.fovV*180/Math.PI)}°`, 15, y); y += 15;
+  ctx.fillText(`Visible: ${visibleCount}/${checkpoints.length}`, 15, y); y += 15;
+  
+  // 個別CP情報
+  ctx.font = '10px monospace';
+  debugInfo.forEach((info, i) => {
+    const status = info.inRange ? (info.inH && info.inV ? 'OK' : `H:${info.inH} V:${info.inV}`) : 'FAR';
+    ctx.fillText(`${info.name.substring(0,8)} ${info.dist}m R:${info.rel}° E:${info.elev}° ${status}`, 15, y);
+    y += 13;
+  });
 
   requestAnimationFrame(arLoop);
 }
