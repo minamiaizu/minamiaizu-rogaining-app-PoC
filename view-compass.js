@@ -114,10 +114,10 @@ class CompassView {
   updateHeading(heading) {
     this.currentHeading = heading;
     
-    // コンパス円を回転
+    // コンパス円を回転（ジャイロコンパス風：方位盤が回転）
     if (this.compassCircle) {
       const normalizedHeading = ((heading % 360) + 360) % 360;
-      this.compassCircle.style.transform = `rotate(${-normalizedHeading}deg)`;
+      this.compassCircle.style.transform = `rotate(${normalizedHeading}deg)`;
     }
     
     // 方位表示を更新
