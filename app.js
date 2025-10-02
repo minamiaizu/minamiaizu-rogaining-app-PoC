@@ -60,6 +60,7 @@ let trackPolyline = null;
 let currentView = 'map';
 let compassContainerSize = 400;
 let currentHeading = 0;
+let smoothedHeading = 0; // 平滑化された方位角
 let rotationTotal = 0;
 let activeTooltip = null;
 let tooltipTimeout = null;
@@ -474,6 +475,21 @@ function drawCompassTicks(){
 }
 function setHeading(deg){
   currentHeading = (deg+360)%360;
+  
+  // 平滑化フィルタ（指数移動平均）を適用
+  // alpha = 0.05 → 95%過去、5%現在（非常に滑らか、遅延やや大）
+  // alpha = 0.1 → 90%過去、10%現在（滑らか、遅延小）
+  // alpha = 0.2 → 80%過去、20%現在（バランス）
+  const alpha = 0.08; // 滑らかさ重視
+  
+  // 角度の差分を計算（最短経路）
+  let diff = currentHeading - smoothedHeading;
+  if (diff > 180) diff -= 360;
+  else if (diff < -180) diff += 360;
+  
+  // 平滑化された方位角を更新
+  smoothedHeading = (smoothedHeading + alpha * diff + 360) % 360;
+  
   updateCompassDisplay();
 }
 
@@ -861,7 +877,7 @@ function arLoop(currentTime){
   // 方位テープ更新
   const strip = document.getElementById('heading-strip');
   if (strip) {
-    strip.style.backgroundPositionX = `-${currentHeading*2}px`;
+    strip.style.backgroundPositionX = `-${smoothedHeading*2}px`;
     
     // 方位文字の位置を更新
     const labels = strip.querySelectorAll('.heading-label');
@@ -874,7 +890,7 @@ function arLoop(currentTime){
       else if (dir === 'W') angle = 270;
       
       // 現在の方位からの相対角度を計算
-      let relativeAngle = angle - currentHeading;
+      let relativeAngle = angle - smoothedHeading;
       while (relativeAngle < -180) relativeAngle += 360;
       while (relativeAngle > 180) relativeAngle -= 360;
       
@@ -920,9 +936,9 @@ function arLoop(currentTime){
     // レンジ外は早期リターン
     if (d > ar.range) return;
     
-    // 方位計算
+    // 方位計算（平滑化された方位角を使用）
     const b = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
-    let rel = ((b - currentHeading + 540) % 360) - 180; // -180〜180
+    let rel = ((b - smoothedHeading + 540) % 360) - 180; // -180〜180
     
     // 標高差と仰角計算
     const elevDiff = (cp.elevation ?? 650) - (currentPosition.elevation ?? 650);
@@ -976,15 +992,16 @@ function arLoop(currentTime){
   
   // デバッグ情報を画面に表示
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.fillRect(10, 10, 280, 95);
+  ctx.fillRect(10, 10, 280, 110);
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold 12px monospace';
+  ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'left';
-  ctx.fillText(`Heading: ${Math.round(currentHeading)}°`, 15, 28);
-  ctx.fillText(`Pitch(raw): ${Math.round(devicePitch)}°`, 15, 45);
-  ctx.fillText(`Pitch(adj): ${Math.round(devicePitch - 90)}°`, 15, 62);
-  ctx.fillText(`Range: ${ar.range}m`, 15, 79);
-  ctx.fillText(`Visible CPs: ${visibleCount}`, 15, 96);
+  ctx.fillText(`Heading(raw): ${Math.round(currentHeading)}°`, 15, 25);
+  ctx.fillText(`Heading(smooth): ${Math.round(smoothedHeading)}°`, 15, 40);
+  ctx.fillText(`Pitch(raw): ${Math.round(devicePitch)}°`, 15, 55);
+  ctx.fillText(`Pitch(adj): ${Math.round(devicePitch - 90)}°`, 15, 70);
+  ctx.fillText(`Range: ${ar.range}m`, 15, 85);
+  ctx.fillText(`Visible CPs: ${visibleCount}`, 15, 100);
 
   requestAnimationFrame(arLoop);
 }
