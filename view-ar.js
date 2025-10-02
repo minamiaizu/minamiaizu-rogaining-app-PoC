@@ -1,5 +1,6 @@
 /**
- * ARView - AR表示管理（デバッグ対応版）
+ * ARView - AR表示管理（画面向き対応版）
+ * Portrait/Landscape両対応のピッチ補正
  * iOS/Android/Windows/Linux対応のカメラAR
  * 依存性注入パターンを使用し、グローバル変数への依存を排除
  */
@@ -318,10 +319,9 @@ class ARView {
       const horiz = Math.max(1, d);
       const elevAngle = Math.atan2(elevDiff, horiz);
       
-      // デバイスのピッチ角を補正（90°を0°として扱う）
-      const devicePitch = this.orientationMgr?.getPitch() || 0;
-      const correctedPitch = devicePitch - 90;
-      const devicePitchRad = correctedPitch * Math.PI / 180;
+      // 画面の向きを考慮したピッチ補正を取得
+      const correctedPitchDeg = this._getScreenCorrectedPitch();
+      const devicePitchRad = correctedPitchDeg * Math.PI / 180;
       const screenElevAngle = elevAngle - devicePitchRad;
       
       // 画面座標計算（ピッチ補正済み）
@@ -387,10 +387,10 @@ class ARView {
   
   _drawDebugInfo(ctx, w, h) {
     ctx.fillStyle = 'rgba(0,0,0,0.85)';
-    ctx.fillRect(10, 10, 300, 240);
+    ctx.fillRect(10, 10, 320, 280);
     ctx.strokeStyle = '#00ff00';
     ctx.lineWidth = 2;
-    ctx.strokeRect(10, 10, 300, 240);
+    ctx.strokeRect(10, 10, 320, 280);
     
     ctx.fillStyle = '#00ff00';
     ctx.font = 'bold 12px monospace';
@@ -407,16 +407,29 @@ class ARView {
     // プラットフォーム情報
     ctx.fillText(`📱 Platform: ${this.isIOS ? 'iOS' : this.isAndroid ? 'Android' : 'Other'}`, 15, y); y += lineHeight;
     
+    // 画面の向き
+    const orientation = this._getScreenOrientation();
+    ctx.fillText(`📐 Orientation: ${orientation}`, 15, y); y += lineHeight;
+    y += 5;
+    
     // OrientationManager情報
     if (this.orientationMgr) {
       const heading = this.orientationMgr.getHeading();
       const pitch = this.orientationMgr.getPitch();
+      const roll = this.orientationMgr.getRoll();
       const mode = this.orientationMgr.getMode();
       
       ctx.fillText(`Heading: ${Math.round(heading)}°`, 15, y); y += lineHeight;
-      ctx.fillText(`Pitch: ${Math.round(pitch)}° (raw)`, 15, y); y += lineHeight;
-      ctx.fillText(`Corrected: ${Math.round(pitch - 90)}°`, 15, y); y += lineHeight;
+      ctx.fillText(`Pitch(β): ${Math.round(pitch)}°`, 15, y); y += lineHeight;
+      ctx.fillText(`Roll(γ): ${Math.round(roll)}°`, 15, y); y += lineHeight;
+      
+      const corrected = this._getScreenCorrectedPitch();
+      ctx.fillStyle = '#ffd700';
+      ctx.fillText(`>>> Corrected: ${Math.round(corrected)}°`, 15, y); y += lineHeight;
+      ctx.fillStyle = '#00ff00';
+      
       ctx.fillText(`Mode: ${mode}`, 15, y); y += lineHeight;
+      y += 5;
     }
     
     // 位置情報
@@ -430,6 +443,7 @@ class ARView {
       ctx.fillText('⚠️ 位置情報なし', 15, y); y += lineHeight;
       ctx.fillStyle = '#00ff00';
     }
+    y += 5;
     
     // CP情報
     const cpCount = this.stateMgr?.checkpoints?.length || 0;
@@ -460,8 +474,8 @@ class ARView {
     
     if (!leftMarker || !rightMarker) return;
     
-    // デバイスピッチを補正（90°を0°として扱う）
-    const correctedPitch = pitch - 90;
+    // 画面の向きを考慮したピッチ補正
+    const correctedPitch = this._getScreenCorrectedPitch();
     
     // -30°～+30°の範囲に制限
     const clampedPitch = Math.max(-30, Math.min(30, correctedPitch));
@@ -475,6 +489,72 @@ class ARView {
     
     leftMarker.style.top = `${markerTop}%`;
     rightMarker.style.top = `${markerTop}%`;
+  }
+  
+  /**
+   * 画面の向きを取得
+   */
+  _getScreenOrientation() {
+    // 方法1: screen.orientation API（推奨）
+    if (screen.orientation && screen.orientation.type) {
+      return screen.orientation.type;
+    }
+    // 方法2: window.orientation（非推奨だが互換性のため）
+    if (typeof window.orientation !== 'undefined') {
+      const angle = window.orientation;
+      if (angle === 0) return 'portrait-primary';
+      if (angle === 180) return 'portrait-secondary';
+      if (angle === 90) return 'landscape-primary';
+      if (angle === -90) return 'landscape-secondary';
+    }
+    // 方法3: window.innerWidthで推測
+    return window.innerWidth > window.innerHeight ? 'landscape-primary' : 'portrait-primary';
+  }
+  
+  /**
+   * 画面の向きに応じてピッチを補正
+   * Portrait: betaを使用（Y軸周り）
+   * Landscape: gammaを使用（X軸周り）
+   */
+  _getScreenCorrectedPitch() {
+    const orientation = this._getScreenOrientation();
+    const pitch = this.orientationMgr?.getPitch() || 0;  // beta
+    const roll = this.orientationMgr?.getRoll() || 0;    // gamma
+    
+    let correctedPitch;
+    
+    if (orientation.includes('portrait')) {
+      // 縦持ち: betaを使用（デバイスのY軸周り）
+      // デバイス垂直上向き = 0°
+      // デバイス水平（カメラ前向き） = 90°
+      // デバイス垂直下向き = 180°
+      // → 90°を0°にするため、90を引く
+      correctedPitch = pitch - 90;
+      
+    } else if (orientation === 'landscape-primary') {
+      // 横持ち（右回転90°、ホームボタンが右）
+      // この向きでは、gammaが前後傾きになる
+      // デバイス上向き = gamma > 0
+      // デバイス水平 = gamma = 0
+      // デバイス下向き = gamma < 0
+      // → そのまま使用（符号はそのまま）
+      correctedPitch = roll;
+      
+    } else if (orientation === 'landscape-secondary') {
+      // 横持ち（左回転-90°/270°、ホームボタンが左）
+      // この向きでは、gammaが前後傾きになる
+      // デバイス上向き = gamma < 0
+      // デバイス水平 = gamma = 0
+      // デバイス下向き = gamma > 0
+      // → 符号を反転
+      correctedPitch = -roll;
+      
+    } else {
+      // デフォルト: portraitとして扱う
+      correctedPitch = pitch - 90;
+    }
+    
+    return correctedPitch;
   }
   
   updateNearestInfo(currentPosition, checkpoints, completedIds) {
@@ -666,16 +746,25 @@ class ARView {
     report.push(`OrientationMgr: ${this.orientationMgr ? '✅' : '❌'}`);
     report.push('');
     
-    // 2. センサー状態
+    // 2. 画面の向き
+    report.push('【画面の向き】');
+    const orientation = this._getScreenOrientation();
+    report.push(`Orientation: ${orientation}`);
+    report.push('');
+    
+    // 3. センサー状態
     report.push('【センサー状態】');
     if (this.orientationMgr) {
       const heading = this.orientationMgr.getHeading();
       const pitch = this.orientationMgr.getPitch();
+      const roll = this.orientationMgr.getRoll();
       const mode = this.orientationMgr.getMode();
+      const corrected = this._getScreenCorrectedPitch();
       
       report.push(`方位: ${Math.round(heading)}°`);
-      report.push(`ピッチ: ${Math.round(pitch)}° (raw)`);
-      report.push(`補正後: ${Math.round(pitch - 90)}°`);
+      report.push(`ピッチ(beta): ${Math.round(pitch)}°`);
+      report.push(`ロール(gamma): ${Math.round(roll)}°`);
+      report.push(`>>> 補正後ピッチ: ${Math.round(corrected)}° <<<`);
       report.push(`モード: ${mode}`);
       report.push(`キャリブ必要: ${this.orientationMgr.needsCalibration() ? '⚠️ はい' : '✅ いいえ'}`);
     } else {
@@ -683,7 +772,7 @@ class ARView {
     }
     report.push('');
     
-    // 3. 位置情報
+    // 4. 位置情報
     report.push('【位置情報】');
     const pos = this.stateMgr?.currentPosition;
     if (pos) {
@@ -697,7 +786,7 @@ class ARView {
     }
     report.push('');
     
-    // 4. チェックポイント
+    // 5. チェックポイント
     report.push('【チェックポイント】');
     const checkpoints = this.stateMgr?.checkpoints || [];
     const completedIds = this.stateMgr?.completedIds || new Set();
@@ -717,20 +806,20 @@ class ARView {
     }
     report.push('');
     
-    // 5. カメラ
+    // 6. カメラ
     report.push('【カメラ】');
     report.push(`ストリーム: ${this.stream ? '✅' : '❌'}`);
     report.push(`ビデオ再生中: ${this.video?.paused === false ? '✅' : '❌'}`);
     report.push('');
     
-    // 6. レンダリング
+    // 7. レンダリング
     report.push('【レンダリング】');
     report.push(`アニメID: ${this.animationId ? '✅ 動作中' : '❌ 停止'}`);
     report.push(`FPS制限: ${this.fpsLimit}`);
     report.push(`Canvas: ${this.canvas?.width}x${this.canvas?.height}`);
     report.push('');
     
-    // 7. 設定
+    // 8. 設定
     report.push('【設定】');
     report.push(`レンジ: ${this.options.range}m`);
     report.push(`FOV: ${Math.round(this.options.fovH*180/Math.PI)}° × ${Math.round(this.options.fovV*180/Math.PI)}°`);
@@ -780,7 +869,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ ARView (Debug Enhanced) 読み込み完了');
+  debugLog('✅ ARView (Screen Orientation Fixed) 読み込み完了');
 } else {
-  console.log('[ARView] Debug Enhanced version loaded');
+  console.log('[ARView] Screen Orientation Fixed version loaded');
 }
