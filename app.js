@@ -975,12 +975,6 @@ function arLoop(currentTime){
     const devicePitchRad = correctedPitch * Math.PI / 180;
     const screenElevAngle = elevAngle - devicePitchRad;
     
-    // 視野内判定（画面上の仰角で判定）
-    const fovH = ar.fovH * 180 / Math.PI;
-    const fovV = ar.fovV * 180 / Math.PI;
-    const inHorizontal = Math.abs(rel) < fovH / 2;
-    const inVertical = Math.abs(screenElevAngle * 180 / Math.PI) < fovV / 2;
-    
     // デバッグ情報を収集
     if (debugInfo.length < 3) { // 最初の3つのCPのみ
       const inRange = d <= ar.range;
@@ -989,17 +983,14 @@ function arLoop(currentTime){
         dist: Math.round(d),
         rel: Math.round(rel),
         elev: Math.round(screenElevAngle * 180 / Math.PI),
-        inRange,
-        inH: inHorizontal,
-        inV: inVertical
+        inRange
       });
     }
     
     // レンジ外は早期リターン
     if (d > ar.range) return;
     
-    if (!inHorizontal || !inVertical) return;
-    
+    // 視野判定を削除（安定性のため）
     visibleCount++;
     
     // 画面座標計算（ピッチ補正済み）
@@ -1051,7 +1042,7 @@ function arLoop(currentTime){
   // 個別CP情報
   ctx.font = '10px monospace';
   debugInfo.forEach((info, i) => {
-    const status = info.inRange ? (info.inH && info.inV ? 'OK' : `H:${info.inH} V:${info.inV}`) : 'FAR';
+    const status = info.inRange ? 'OK' : 'FAR';
     ctx.fillText(`${info.name.substring(0,8)} ${info.dist}m R:${info.rel}° E:${info.elev}° ${status}`, 15, y);
     y += 13;
   });
