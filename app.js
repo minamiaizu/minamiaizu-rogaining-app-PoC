@@ -619,12 +619,14 @@ function updateCompassDisplay(){
   const compassCircle = document.getElementById('compass-circle');
   const headingDisplay = document.getElementById('heading-display');
   
-  // 方位データを取得（OrientationManagerまたはフォールバック）
-  const heading = orientationManager ? orientationManager.getHeading() : smoothedHeading;
+  // ソナーと完全に同じheading取得
+  const heading = smoothedHeading || 0;
   
   if (compassCircle){
     // ソナー方式：直接回転（北が常に上）
-    compassCircle.style.transform = `rotate(${-heading}deg)`;
+    // 360°境界対策：角度を正規化して設定
+    const normalizedHeading = ((heading % 360) + 360) % 360;
+    compassCircle.style.transform = `rotate(${-normalizedHeading}deg)`;
   }
   
   if (headingDisplay){
@@ -659,11 +661,12 @@ function updateCheckpointMarkers(heading){
     if (completedCheckpoints.has(cp.id)) return;
     const d = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
     const color = getDistanceColor(d, minDistance, maxDistance);
-    const b = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    // ソナーと完全に同じ変数名と処理
+    const brng = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
     
-    // ソナー方式の座標変換
-    const relativeBearing = (b - heading + 360) % 360;
-    const angle = (relativeBearing - 90) * Math.PI / 180;
+    // ソナーと完全に同じ相対方位計算
+    const relBearing = (brng - heading + 360) % 360;
+    const angle = (relBearing - 90) * Math.PI / 180;
     const x = centerPoint + radius * Math.cos(angle);
     const y = centerPoint + radius * Math.sin(angle);
     
