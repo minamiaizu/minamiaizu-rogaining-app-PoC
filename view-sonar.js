@@ -255,8 +255,8 @@ class SonarView {
       if (dist > this.options.range) return;
       
       const brng = this.geoMgr.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
-      const heading = this.orientationMgr?.getHeading() || 0;
-      const relBearing = (brng - heading + 360) % 360;
+      // 修正: Canvas全体が既に-headingで回転しているため、CPは絶対方位(brng)で配置
+      const relBearing = brng;
       
       const normalizedDist = dist / this.options.range;
       const r = normalizedDist * radius;
@@ -660,8 +660,9 @@ class SonarView {
       if (dist > this.options.range) return;
       
       const brng = this.geoMgr.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
-      const heading = this.orientationMgr?.getHeading() || 0;
-      const relBearing = (brng - heading + 360) % 360;
+      
+      // 修正: Canvas全体が既に回転しているため、絶対方位を使用
+      const relBearing = brng;
       
       const normalizedDist = dist / this.options.range;
       const r = normalizedDist * radius;
@@ -859,7 +860,7 @@ if (typeof window !== 'undefined') {
 }
 
 if (typeof debugLog === 'function') {
-  debugLog('✅ SonarView (Refactored - OrientationMgr Integrated) 読み込み完了');
+  debugLog('✅ SonarView (Fixed: CP rotation issue) 読み込み完了');
 } else {
-  console.log('[SonarView] Refactored version with OrientationMgr loaded');
+  console.log('[SonarView] Fixed version with correct CP rotation loaded');
 }
