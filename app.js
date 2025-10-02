@@ -2134,3 +2134,4 @@ document.addEventListener('click', (e) => {
   
   debugLog('アプリケーション初期化完了');
   
+})();
