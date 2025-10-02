@@ -90,8 +90,57 @@
       <canvas id="ar-canvas"></canvas>
       <div class="ar-overlay">
         <div class="ar-top-strip">
-          <div id="heading-strip"></div>
+          <div id="heading-strip">
+            <span class="heading-label" data-dir="N" style="left: 0px;">N</span>
+            <span class="heading-label" data-dir="E" style="left: 1800px;">E</span>
+            <span class="heading-label" data-dir="S" style="left: 3600px;">S</span>
+            <span class="heading-label" data-dir="W" style="left: 5400px;">W</span>
+          </div>
         </div>
+        
+        <!-- 色の凡例 -->
+        <div id="ar-legend">
+          <div class="legend-title">距離の目安</div>
+          <div class="legend-gradient"></div>
+          <div class="legend-labels">
+            <span>近</span>
+            <span>遠</span>
+          </div>
+        </div>
+        
+        <!-- ピッチインジケーター（左） -->
+        <div id="pitch-indicator-left" class="pitch-indicator">
+          <div class="pitch-scale">
+            <div class="pitch-line" data-angle="30"><span>+30°</span></div>
+            <div class="pitch-line" data-angle="15"><span>+15°</span></div>
+            <div class="pitch-line pitch-zero" data-angle="0"><span>0°</span></div>
+            <div class="pitch-line" data-angle="-15"><span>-15°</span></div>
+            <div class="pitch-line" data-angle="-30"><span>-30°</span></div>
+          </div>
+          <div class="pitch-marker-container">
+            <div class="pitch-marker">◄</div>
+          </div>
+        </div>
+        
+        <!-- ピッチインジケーター（右） -->
+        <div id="pitch-indicator-right" class="pitch-indicator">
+          <div class="pitch-scale">
+            <div class="pitch-line" data-angle="30"><span>+30°</span></div>
+            <div class="pitch-line" data-angle="15"><span>+15°</span></div>
+            <div class="pitch-line pitch-zero" data-angle="0"><span>0°</span></div>
+            <div class="pitch-line" data-angle="-15"><span>-15°</span></div>
+            <div class="pitch-line" data-angle="-30"><span>-30°</span></div>
+          </div>
+          <div class="pitch-marker-container">
+            <div class="pitch-marker">►</div>
+          </div>
+        </div>
+        
+        <!-- 最寄りCP情報 -->
+        <div id="nearest-cp-info" class="nearest-cp-display">
+          位置情報を取得中...
+        </div>
+        
         <div class="ar-range">
           <button type="button" class="range-btn" data-range="250">250m</button>
           <button type="button" class="range-btn" data-range="500">500m</button>

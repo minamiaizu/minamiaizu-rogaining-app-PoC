@@ -63,7 +63,7 @@ let currentHeading = 0;
 let rotationTotal = 0;
 let activeTooltip = null;
 let tooltipTimeout = null;
-let devicePitch = 0; // デバイスの上下傾き
+let devicePitch = 0; // デバイスの上下傾き角（度）
 let ar = {
   stream: null,
   ctx: null,
@@ -253,6 +253,14 @@ function bearing(lat1,lon1,lat2,lon2){
   const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(dλ);
   let θ = Math.atan2(y,x)*180/Math.PI;
   return (θ+360)%360;
+}
+function calculateETA(distance, elevationDiff){
+  // 徒歩速度: 時速4km = 分速67m
+  const baseSpeed = 67; // m/min
+  const flatTime = distance / baseSpeed;
+  // 登りのペナルティ: 100m登りで約15分追加
+  const elevationPenalty = Math.max(0, elevationDiff) * 0.15;
+  return flatTime + elevationPenalty;
 }
 
 /* ======== Geolocation ======== */
@@ -491,15 +499,35 @@ function startOrientation(){
 
 /* ======== Device motion (傾き検出) ======== */
 function startDeviceMotion(){
-  if (typeof DeviceMotionEvent !== 'undefined') {
-    window.addEventListener('devicemotion', (e)=>{
-      if (e.rotationRate && e.rotationRate.beta !== null) {
-        // betaは前後の傾き（-180〜180度）
-        devicePitch = e.rotationRate.beta || 0;
+  if (typeof DeviceOrientationEvent !== 'undefined') {
+    window.addEventListener('deviceorientation', (e)=>{
+      if (e.beta !== null) {
+        // betaは前後の傾き角（-180〜180度、0=水平、+90=前倒し、-90=後ろ倒し）
+        devicePitch = e.beta || 0;
+        updatePitchIndicator();
       }
     });
-    debugLog('デバイス傾き検出を開始');
+    debugLog('デバイス傾き角検出を開始');
   }
+}
+
+function updatePitchIndicator(){
+  // マーカー要素を取得
+  const leftMarker = document.querySelector('#pitch-indicator-left .pitch-marker');
+  const rightMarker = document.querySelector('#pitch-indicator-right .pitch-marker');
+  
+  if (!leftMarker || !rightMarker) return;
+  
+  // -30°〜+30°の範囲でクランプ
+  const clampedPitch = Math.max(-30, Math.min(30, devicePitch));
+  
+  // ピッチ角を位置（%）に変換
+  // +30°が上（0%）、0°が中央（50%）、-30°が下（100%）
+  const position = ((30 - clampedPitch) / 60) * 100;
+  
+  // マーカーの位置を更新
+  leftMarker.style.top = `${position}%`;
+  rightMarker.style.top = `${position}%`;
 }
 
 /* ======== Compass display update ======== */
@@ -830,6 +858,26 @@ function arLoop(currentTime){
     strip.style.backgroundPositionX = `-${currentHeading*2}px`;
   }
 
+  // 最寄りCPの情報を更新
+  let nearestCP = null;
+  let nearestDist = Infinity;
+  checkpoints.forEach(cp => {
+    if (completedCheckpoints.has(cp.id)) return;
+    const d = getCachedDistance(cp.id, currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+    if (d < nearestDist) {
+      nearestDist = d;
+      nearestCP = cp;
+    }
+  });
+  
+  const nearestInfo = document.getElementById('nearest-cp-info');
+  if (nearestInfo && nearestCP) {
+    const elevDiff = (nearestCP.elevation ?? 650) - (currentPosition.elevation ?? 650);
+    const eta = calculateETA(nearestDist, elevDiff);
+    const elevText = elevDiff !== 0 ? ` ${elevDiff > 0 ? '↗+' : '↘'}${Math.abs(Math.round(elevDiff))}m` : '';
+    nearestInfo.textContent = `→ ${nearestCP.name} ${Math.round(nearestDist)}m${elevText} ETA: 約${Math.round(eta)}分`;
+  }
+
   // レンジ基準のマーカーサイズ取得
   const sizes = getMarkerSizeByRange();
 
@@ -849,12 +897,18 @@ function arLoop(currentTime){
     const horiz = Math.max(1, d);
     const elevAngle = Math.atan2(elevDiff, horiz);
     
-    // 視野内判定
-    if (!isInView(rel, elevAngle)) return;
+    // デバイスのピッチ角を考慮した画面上の仰角
+    const devicePitchRad = devicePitch * Math.PI / 180;
+    const screenElevAngle = elevAngle - devicePitchRad;
     
-    // 画面座標計算
+    // 視野内判定（画面上の仰角で判定）
+    const fovH = ar.fovH * 180 / Math.PI;
+    const fovV = ar.fovV * 180 / Math.PI;
+    if (Math.abs(rel) >= fovH / 2 || Math.abs(screenElevAngle * 180 / Math.PI) >= fovV / 2) return;
+    
+    // 画面座標計算（ピッチ補正済み）
     const x = w/2 + (rel * (Math.PI/180)) / ar.fovH * w;
-    const y = h/2 - elevAngle / ar.fovV * h;
+    const y = h/2 - screenElevAngle / ar.fovV * h;
 
     // マーカー描画
     const r = sizes.marker / 2;
@@ -862,6 +916,10 @@ function arLoop(currentTime){
     ctx.arc(x, y, r, 0, Math.PI*2);
     ctx.fillStyle = completedCheckpoints.has(cp.id) ? '#48bb78' : '#667eea';
     ctx.fill();
+    
+    // ETA計算
+    const eta = calculateETA(d, elevDiff);
+    const etaText = `~${Math.round(eta)}分`;
     
     // ラベル描画
     ctx.font = `bold ${sizes.font}px system-ui, -apple-system`;
@@ -872,7 +930,7 @@ function arLoop(currentTime){
     ctx.lineWidth = 4;
     
     const elevText = elevDiff !== 0 ? ` ${elevDiff > 0 ? '+' : ''}${Math.round(elevDiff)}m` : '';
-    const label = `${cp.name} ${Math.round(d)}m${elevText}`;
+    const label = `${cp.name} ${Math.round(d)}m${elevText} ${etaText}`;
     
     ctx.strokeText(label, x, y + r + 4);
     ctx.fillText(label, x, y + r + 4);
