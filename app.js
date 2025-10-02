@@ -812,6 +812,101 @@ function initSonar() {
   }
   
   debugLog('ソナーシステム初期化完了');
+  
+  // 標高断面図のタップイベント
+  if (sonar.elevationCanvas) {
+    sonar.elevationCanvas.addEventListener('click', (e) => {
+      if (!currentPosition) return;
+      
+      const rect = sonar.elevationCanvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      const w = sonar.elevationCanvas.width;
+      const h = sonar.elevationCanvas.height;
+      const currentElev = currentPosition.elevation || 650;
+      const baselineY = h / 2;
+      
+      let distances = [];
+      checkpoints.forEach(cp => {
+        const dist = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+        if (dist <= sonar.range && !completedCheckpoints.has(cp.id)) {
+          distances.push({ cp, dist });
+        }
+      });
+      
+      if (distances.length === 0) return;
+      
+      const maxDist = Math.max(...distances.map(d => d.dist));
+      
+      // クリック位置に最も近いCPを探す
+      let nearestCP = null;
+      let minDistance = Infinity;
+      
+      distances.forEach(({ cp, dist }) => {
+        const cpX = 40 + ((dist / maxDist) * (w - 50));
+        const elevDiff = (cp.elevation || 650) - currentElev;
+        const cpY = elevDiff > 0 ? baselineY - Math.min(Math.abs(elevDiff) / 1.5, h / 2 - 20) - 18 
+                                  : baselineY + Math.min(Math.abs(elevDiff) / 1.5, h / 2 - 20) + 18;
+        
+        const clickDist = Math.sqrt((x - cpX) ** 2 + (y - cpY) ** 2);
+        if (clickDist < 25 && clickDist < minDistance) {
+          minDistance = clickDist;
+          nearestCP = { cp, dist };
+        }
+      });
+      
+      if (nearestCP) {
+        showSonarDetailModal(nearestCP.cp, nearestCP.dist);
+      }
+    });
+  }
+  
+  // ソナー円のタップイベント
+  if (sonar.canvas) {
+    sonar.canvas.addEventListener('click', (e) => {
+      if (!currentPosition) return;
+      
+      const rect = sonar.canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      const w = sonar.canvas.width;
+      const h = sonar.canvas.height;
+      const cx = w / 2;
+      const cy = h / 2;
+      const radius = Math.min(cx, cy) - 20;
+      
+      // クリック位置に最も近いCPを探す
+      let nearestCP = null;
+      let minDistance = Infinity;
+      
+      checkpoints.forEach(cp => {
+        const dist = distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+        if (dist > sonar.range) return;
+        
+        const brng = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+        const heading = smoothedHeading || 0;
+        const relBearing = (brng - heading + 360) % 360;
+        
+        const normalizedDist = dist / sonar.range;
+        const r = normalizedDist * radius;
+        const angle = (relBearing - 90 - heading) * Math.PI / 180;
+        const cpX = cx + r * Math.cos(angle);
+        const cpY = cy + r * Math.sin(angle);
+        
+        const clickDist = Math.sqrt((x - cpX) ** 2 + (y - cpY) ** 2);
+        if (clickDist < 30 && clickDist < minDistance) {
+          minDistance = clickDist;
+          nearestCP = { cp, dist };
+        }
+      });
+      
+      if (nearestCP) {
+        showSonarDetailModal(nearestCP.cp, nearestCP.dist);
+      }
+    });
+  }
 }
 
 function resizeSonarCanvas() {
@@ -873,6 +968,16 @@ function drawSonarDisplay() {
   // 背景クリア
   ctx.clearRect(0, 0, w, h);
   
+  // Canvasを保存して回転を適用
+  ctx.save();
+  ctx.translate(cx, cy);
+  
+  // ソナー円をheadingに応じて回転（北が上になるように）
+  const heading = smoothedHeading || 0;
+  ctx.rotate(-heading * Math.PI / 180);
+  
+  ctx.translate(-cx, -cy);
+  
   // 背景グラデーション（明るいポップなグリーン - ドラゴンレーダー風）
   const bgGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
   bgGrad.addColorStop(0, '#a8e6cf');  // 明るいミントグリーン
@@ -900,6 +1005,45 @@ function drawSonarDisplay() {
   ctx.strokeStyle = '#fff';
   ctx.lineWidth = 3;
   ctx.stroke();
+  
+  // Canvasの状態を復元
+  ctx.restore();
+  
+  // 方位ラベルは回転させずに固定位置に描画
+  drawCardinalLabels(ctx, cx, cy, radius);
+}
+
+function drawCardinalLabels(ctx, cx, cy, radius) {
+  // 方位ラベルを画面固定位置に描画（回転の影響を受けない）
+  ctx.save();
+  
+  ctx.fillStyle = '#2d3748';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.lineWidth = 3;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  // 北（上）- 赤色で強調
+  ctx.font = 'bold 32px Georgia, serif';
+  ctx.strokeText('N', cx, cy - radius + 20);
+  ctx.fillStyle = '#c53030';
+  ctx.fillText('N', cx, cy - radius + 20);
+  
+  // 東（右）
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillStyle = '#2d3748';
+  ctx.strokeText('E', cx + radius - 20, cy);
+  ctx.fillText('E', cx + radius - 20, cy);
+  
+  // 南（下）
+  ctx.strokeText('S', cx, cy + radius - 20);
+  ctx.fillText('S', cx, cy + radius - 20);
+  
+  // 西（左）
+  ctx.strokeText('W', cx - radius + 20, cy);
+  ctx.fillText('W', cx - radius + 20, cy);
+  
+  ctx.restore();
 }
 
 function drawDistanceRings(ctx, cx, cy, radius) {
@@ -1105,16 +1249,59 @@ function drawElevationProfile() {
   ctx.fillStyle = '#f7fafc';
   ctx.fillRect(0, 0, w, h);
   
-  // 基準線（現在地の標高）
+  const currentElev = currentPosition.elevation || 650;
   const baselineY = h / 2;
-  ctx.strokeStyle = 'rgba(72, 187, 120, 0.6)';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([5, 5]);
-  ctx.beginPath();
-  ctx.moveTo(0, baselineY);
-  ctx.lineTo(w, baselineY);
-  ctx.stroke();
+  
+  // 凡例を右上に追加
+  ctx.save();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.fillRect(w - 110, 5, 105, 35);
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.strokeRect(w - 110, 5, 105, 35);
+  
+  ctx.font = 'bold 11px system-ui';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ef4444';
+  ctx.fillRect(w - 105, 12, 15, 10);
+  ctx.fillStyle = '#2d3748';
+  ctx.fillText('🔺登り', w - 85, 20);
+  
+  ctx.fillStyle = '#3b82f6';
+  ctx.fillRect(w - 105, 27, 15, 10);
+  ctx.fillStyle = '#2d3748';
+  ctx.fillText('🔻下り', w - 85, 35);
+  ctx.restore();
+  
+  // Y軸スケール（左側）
+  ctx.save();
+  ctx.font = 'bold 10px system-ui';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#4a5568';
+  
+  // スケール線とラベル
+  const scaleSteps = [50, 25, 0, -25, -50];
+  scaleSteps.forEach(diff => {
+    const y = baselineY - (diff / 50) * (h / 4);
+    
+    // 横線
+    ctx.strokeStyle = diff === 0 ? 'rgba(72, 187, 120, 0.8)' : 'rgba(160, 174, 192, 0.3)';
+    ctx.lineWidth = diff === 0 ? 2 : 1;
+    if (diff === 0) {
+      ctx.setLineDash([]);
+    } else {
+      ctx.setLineDash([3, 3]);
+    }
+    ctx.beginPath();
+    ctx.moveTo(35, y);
+    ctx.lineTo(w - 5, y);
+    ctx.stroke();
+    
+    // ラベル
+    const label = diff === 0 ? `${currentElev}m` : `${diff > 0 ? '+' : ''}${diff}`;
+    ctx.fillText(label, 32, y + 3);
+  });
   ctx.setLineDash([]);
+  ctx.restore();
   
   // 各CPの標高バー
   let distances = [];
@@ -1125,48 +1312,80 @@ function drawElevationProfile() {
     }
   });
   
-  if (distances.length === 0) return;
+  if (distances.length === 0) {
+    ctx.fillStyle = '#718096';
+    ctx.font = 'bold 14px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('範囲内にCPがありません', w / 2, h / 2);
+    return;
+  }
   
   const maxDist = Math.max(...distances.map(d => d.dist));
   
+  // CPバーとラベル
   distances.forEach(({ cp, dist }) => {
-    const x = (dist / maxDist) * w;
-    const elevDiff = (cp.elevation || 650) - (currentPosition.elevation || 650);
-    const barHeight = Math.min(Math.abs(elevDiff) / 1.5, h / 2 - 20); // 上部に余裕を確保
+    const x = 40 + ((dist / maxDist) * (w - 50));
+    const elevDiff = (cp.elevation || 650) - currentElev;
+    const barHeight = Math.min(Math.abs(elevDiff) / 1.5, h / 2 - 20);
     
-    // 登り/下りで色分け（ライトテーマ対応）
+    // バーの色
     const color = elevDiff > 0 
       ? `rgba(239, 68, 68, ${0.5 + barHeight / h * 0.3})` 
       : `rgba(59, 130, 246, ${0.5 + barHeight / h * 0.3})`;
     
+    // バー本体
     ctx.fillStyle = color;
     if (elevDiff > 0) {
-      // 登り：上向きバー
-      ctx.fillRect(x - 4, baselineY - barHeight, 8, barHeight);
+      ctx.fillRect(x - 5, baselineY - barHeight, 10, barHeight);
     } else {
-      // 下り：下向きバー
-      ctx.fillRect(x - 4, baselineY, 8, barHeight);
+      ctx.fillRect(x - 5, baselineY, 10, barHeight);
     }
     
-    // CP番号（フォントサイズを大きく、背景付きで視認性向上）
-    ctx.fillStyle = '#2d3748';
-    ctx.font = 'bold 13px system-ui';
-    ctx.textAlign = 'center';
+    // 外枠
+    ctx.strokeStyle = '#2d3748';
+    ctx.lineWidth = 1;
+    if (elevDiff > 0) {
+      ctx.strokeRect(x - 5, baselineY - barHeight, 10, barHeight);
+    } else {
+      ctx.strokeRect(x - 5, baselineY, 10, barHeight);
+    }
     
-    // 背景（白い円）
-    const textY = elevDiff > 0 ? baselineY - barHeight - 15 : baselineY + barHeight + 18;
+    // CP番号と標高差（背景付き）
+    const textY = elevDiff > 0 ? baselineY - barHeight - 18 : baselineY + barHeight + 18;
+    
+    // 白い円背景
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(x, textY, 11, 0, Math.PI * 2);
+    ctx.arc(x, textY, 13, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#2d3748';
     ctx.lineWidth = 1.5;
     ctx.stroke();
     
-    // 番号
+    // CP番号
     ctx.fillStyle = '#2d3748';
+    ctx.font = 'bold 16px system-ui';
+    ctx.textAlign = 'center';
     ctx.fillText(cp.points, x, textY + 1);
+    
+    // 標高差ラベル（バーの横）
+    ctx.font = 'bold 11px system-ui';
+    ctx.fillStyle = elevDiff > 0 ? '#ef4444' : '#3b82f6';
+    const elevText = `${elevDiff > 0 ? '+' : ''}${Math.round(elevDiff)}m`;
+    ctx.fillText(elevText, x, textY + (elevDiff > 0 ? -18 : 18));
+    
+    // タップ可能領域を示す視覚的ヒント（ホバー用の薄い枠）
+    ctx.strokeStyle = 'rgba(102, 126, 234, 0.3)';
+    ctx.lineWidth = 2;
+    const hitboxSize = 20;
+    ctx.strokeRect(x - hitboxSize/2, textY - hitboxSize/2, hitboxSize, hitboxSize);
   });
+  
+  // タイトル
+  ctx.fillStyle = '#2d3748';
+  ctx.font = 'bold 11px system-ui';
+  ctx.textAlign = 'left';
+  ctx.fillText('標高プロファイル', 5, 12);
 }
 
 function updateSonarNearestInfo() {
@@ -1293,6 +1512,86 @@ function checkScanSound() {
   }
   sonar.lastScanSoundAngle = sonar.scanAngle;
 }
+
+/* ======== Sonar detail modal ======== */
+function showSonarDetailModal(cp, dist) {
+  if (!currentPosition) return;
+  
+  const elevDiff = (cp.elevation || 650) - (currentPosition.elevation || 650);
+  const eta = calculateETA(dist, elevDiff);
+  const brng = bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
+  
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:10000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);animation:fadeIn 0.2s;';
+  
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background:#fff;padding:25px;border-radius:16px;max-width:400px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,0.3);';
+  
+  const title = document.createElement('h3');
+  title.textContent = cp.name;
+  title.style.cssText = 'margin:0 0 20px 0;font-size:22px;color:#2d3748;font-weight:800;';
+  dialog.appendChild(title);
+  
+  const infoGrid = document.createElement('div');
+  infoGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:20px;';
+  
+  const addInfoItem = (label, value, icon) => {
+    const item = document.createElement('div');
+    item.style.cssText = 'background:#f7fafc;padding:12px;border-radius:10px;';
+    item.innerHTML = `
+      <div style="font-size:12px;color:#718096;margin-bottom:4px;font-weight:600;">${icon} ${label}</div>
+      <div style="font-size:18px;color:#2d3748;font-weight:800;">${value}</div>
+    `;
+    infoGrid.appendChild(item);
+  };
+  
+  addInfoItem('距離', `${Math.round(dist)}m`, '📏');
+  addInfoItem('方位', `${Math.round(brng)}°`, '🧭');
+  addInfoItem('標高', `${cp.elevation || 650}m`, '⛰️');
+  addInfoItem('標高差', `${elevDiff > 0 ? '↗+' : elevDiff < 0 ? '↘' : ''}${Math.abs(Math.round(elevDiff))}m`, '📊');
+  addInfoItem('推定時間', `約${Math.round(eta)}分`, '⏱️');
+  addInfoItem('ポイント', `${cp.points}点`, '⭐');
+  
+  dialog.appendChild(infoGrid);
+  
+  const btnContainer = document.createElement('div');
+  btnContainer.style.cssText = 'display:flex;gap:10px;';
+  
+  const mapBtn = document.createElement('button');
+  mapBtn.textContent = '🗺️ 地図で確認';
+  mapBtn.style.cssText = 'flex:1;padding:14px;background:#667eea;color:#fff;border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:15px;';
+  mapBtn.onclick = () => {
+    document.body.removeChild(modal);
+    switchView('map');
+    if (map) {
+      map.setView([cp.lat, cp.lng], 16);
+    }
+  };
+  btnContainer.appendChild(mapBtn);
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '閉じる';
+  closeBtn.style.cssText = 'flex:1;padding:14px;background:#cbd5e0;color:#2d3748;border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:15px;';
+  closeBtn.onclick = () => {
+    document.body.removeChild(modal);
+  };
+  btnContainer.appendChild(closeBtn);
+  
+  dialog.appendChild(btnContainer);
+  modal.appendChild(dialog);
+  
+  // 背景クリックで閉じる
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      document.body.removeChild(modal);
+    }
+  });
+  
+  document.body.appendChild(modal);
+  
+  debugLog(`CP詳細: ${cp.name}`);
+}
+
 
 /* ======== Tabs ======== */
 function switchView(view){
