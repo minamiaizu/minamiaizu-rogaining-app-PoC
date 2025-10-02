@@ -988,8 +988,8 @@ function drawSonarCheckpoints(ctx, cx, cy, radius) {
     ctx.arc(x, y, size * 2.5, 0, Math.PI * 2);
     ctx.fill();
     
-    // 光点本体（黄色 - ドラゴンレーダー風）
-    ctx.fillStyle = '#ffd700';
+    // 光点本体（距離グラデーション）
+    ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(x, y, size, 0, Math.PI * 2);
     ctx.fill();
@@ -1132,7 +1132,7 @@ function drawElevationProfile() {
   distances.forEach(({ cp, dist }) => {
     const x = (dist / maxDist) * w;
     const elevDiff = (cp.elevation || 650) - (currentPosition.elevation || 650);
-    const barHeight = Math.min(Math.abs(elevDiff) / 1.5, h / 2 - 15); // 余裕を持たせる
+    const barHeight = Math.min(Math.abs(elevDiff) / 1.5, h / 2 - 20); // 上部に余裕を確保
     
     // 登り/下りで色分け（ライトテーマ対応）
     const color = elevDiff > 0 
@@ -1154,7 +1154,7 @@ function drawElevationProfile() {
     ctx.textAlign = 'center';
     
     // 背景（白い円）
-    const textY = elevDiff > 0 ? baselineY - barHeight - 12 : baselineY + barHeight + 18;
+    const textY = elevDiff > 0 ? baselineY - barHeight - 15 : baselineY + barHeight + 18;
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
     ctx.arc(x, textY, 11, 0, Math.PI * 2);
