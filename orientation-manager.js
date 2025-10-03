@@ -278,7 +278,7 @@ class OrientationManager {
       
       this.absoluteSensor.addEventListener('reading', () => {
         const q = this.absoluteSensor.quaternion;
-        const angles = this.quaternionToEuler(q);
+        const angles = this.quaternionToEulerAndroid(q);
         
         // Android: Quaternionから計算した方位をそのまま使用
         this.currentHeading = angles.yaw;
@@ -353,6 +353,38 @@ class OrientationManager {
     //if (navigator.userAgent.indexOf('Android') !== -1) {
     //  yaw = (360 - yaw) % 360;
     //}
+    
+    // Beta (前後傾斜): -180°~180°
+    const beta = Math.atan2(
+      2.0 * (w * x + y * z),
+      1.0 - 2.0 * (x * x + y * y)
+    ) * 180 / Math.PI;
+    
+    // Gamma (左右傾斜): -90°~90°
+    const sinGamma = 2.0 * (w * y - z * x);
+    const gamma = Math.asin(
+      Math.max(-1, Math.min(1, sinGamma))
+    ) * 180 / Math.PI;
+    
+    return {
+      yaw: (yaw + 360) % 360,
+      pitch: beta,
+      roll: gamma
+    };
+  }
+  
+  // ========== Quaternionから角度計算 - Android専用（座標系補正版） ==========
+  quaternionToEulerAndroid(q) {
+    const [x, y, z, w] = q;
+    
+    // Yaw (方位角) - Z軸周りの回転
+    let yaw = Math.atan2(
+      2.0 * (w * z + x * y),
+      1.0 - 2.0 * (y * y + z * z)
+    ) * 180 / Math.PI;
+    
+    // 🔧 Android座標系補正: 東西反転
+    yaw = (360 - yaw) % 360;
     
     // Beta (前後傾斜): -180°~180°
     const beta = Math.atan2(
