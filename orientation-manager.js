@@ -377,7 +377,7 @@ class OrientationManager {
         // 🔧 修正: Androidの座標系補正（absolute属性に関わらず適用）
         if (this.isAndroid) {
           rawHeading = (360 - rawHeading) % 360;
-          this.log(`🔄 Android座標系に３６０°－値`);
+          this.log('🔄 Android座標系に３６０°－値');
           
           // 初回のみログ出力（ログの氾濫を防ぐ）
           if (!androidCorrectionLogged) {
