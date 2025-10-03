@@ -247,7 +247,7 @@ class ARView {
     for (let offset = -displayRange; offset <= displayRange; offset += 5) {
       const angle = (heading + offset + 360) % 360;
       const normalizedOffset = offset / fovHDeg;
-      const x = w/2 + normalizedOffset * w;
+      const x = w/2 - normalizedOffset * w;
       
       // 画面外は描画しない
       if (x < 0 || x > w) continue;
