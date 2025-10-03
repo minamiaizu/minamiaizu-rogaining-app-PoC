@@ -88,17 +88,17 @@ class OrientationManager {
     
     // 1. 基本的なAndroid検出
     if (/Android/.test(ua)) {
-      //this.log('✅ Android検出: UserAgentにAndroidを確認');
-      //this.log(`📱 UserAgent: ${ua.substring(0, 80)}...`);
+      this.log('✅ Android検出: UserAgentにAndroidを確認');
+      this.log(`📱 UserAgent: ${ua.substring(0, 80)}...`);
       return true;
     }
     
     // 2. 念のため、Linux + モバイルの組み合わせもチェック
-    //if (/Linux/.test(ua) && /Mobile/.test(ua)) {
-    //  this.log('⚠️ Android可能性: Linux + Mobile検出');
-    //  this.log(`📱 UserAgent: ${ua.substring(0, 80)}...`);
-    //  return true;
-    //}
+    if (/Linux/.test(ua) && /Mobile/.test(ua)) {
+      this.log('⚠️ Android可能性: Linux + Mobile検出');
+      this.log(`📱 UserAgent: ${ua.substring(0, 80)}...`);
+      return true;
+    }
     
     this.log(`ℹ️ Android非検出 UA: ${ua.substring(0, 60)}...`);
     return false;
@@ -345,15 +345,6 @@ class OrientationManager {
       1.0 - 2.0 * (y * y + z * z)
     ) * 180 / Math.PI;
     
-    // Android補正
-    //if (this.isAndroid) {
-    //if (/Android/.test(navigator.userAgent)) {
-    //  yaw = (360 - yaw) % 360;
-    //}
-    //if (navigator.userAgent.indexOf('Android') !== -1) {
-    //  yaw = (360 - yaw) % 360;
-    //}
-    
     // Beta (前後傾斜): -180°~180°
     const beta = Math.atan2(
       2.0 * (w * x + y * z),
@@ -383,6 +374,11 @@ class OrientationManager {
       1.0 - 2.0 * (y * y + z * z)
     ) * 180 / Math.PI;
     
+    // 🔧 Android座標系補正: 東西反転
+    if (this.isAndroid) {
+      yaw = (360 - yaw) % 360;
+    }
+    
     // パターン1: マイナス符号あり（現在のコード）
     let yaw1 = Math.atan2(
       -2.0 * (w * z + x * y),
@@ -411,9 +407,6 @@ class OrientationManager {
       this.log(`📊 Quaternion: x=${x.toFixed(3)}, y=${y.toFixed(3)}, z=${z.toFixed(3)}, w=${w.toFixed(3)}`);
       this.log(`🧭 P1(-): ${Math.round(yaw1)}° | P2(+): ${Math.round(yaw2)}° | P3(inv): ${Math.round(yaw3)}° | P4(270): ${Math.round(yaw4)}°`);
     }
-    
-    // 🔧 Android座標系補正: 東西反転
-    //yaw = (270 - yaw) % 360;
     
     // Beta (前後傾斜): -180°~180°
     const beta = Math.atan2(
@@ -446,16 +439,16 @@ class OrientationManager {
         let rawHeading = e.alpha;
         
         // 🔧 修正: Androidの座標系補正（absolute属性に関わらず適用）
-        //if (this.isAndroid) {
-        //  rawHeading = (360 - rawHeading) % 360;
-        //  
+        if (this.isAndroid) {
+          rawHeading = (360 - rawHeading) % 360;
+          
           // 初回のみログ出力（ログの氾濫を防ぐ）
-        //  if (!androidCorrectionLogged) {
-        //    this.log(`🔄 Android座標系補正適用: ${e.alpha.toFixed(1)}° → ${rawHeading.toFixed(1)}°`);
-        //    this.log(`   this.isAndroid = ${this.isAndroid}`);
-        //    androidCorrectionLogged = true;
-        //  }
-        //}
+          if (!androidCorrectionLogged) {
+            this.log(`🔄 Android座標系補正適用: ${e.alpha.toFixed(1)}° → ${rawHeading.toFixed(1)}°`);
+            this.log(`   this.isAndroid = ${this.isAndroid}`);
+            androidCorrectionLogged = true;
+          }
+        }
         
         if (e.absolute === true) {
           // 絶対モード(磁北基準)
