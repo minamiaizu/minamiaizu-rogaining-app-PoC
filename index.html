@@ -32,6 +32,23 @@
     </div>
   </div>
 
+  <!-- iOS Permission Request UI (新規) -->
+  <div id="ios-permission-prompt" class="calibration-ui" hidden>
+    <div class="calibration-content">
+      <h3>📱 センサーへのアクセス許可</h3>
+      <p>コンパス、AR、ソナー機能を使用するには、<strong>モーションと方向</strong>へのアクセス許可が必要です。</p>
+      <p style="font-size:14px;color:#718096;margin-top:10px;">
+        ※ iOS 13以降では、センサーへのアクセスにユーザーの許可が必要です
+      </p>
+      <button id="request-ios-permission" class="button button-primary">
+        🔓 許可する
+      </button>
+      <button id="close-ios-permission" class="button">
+        後で許可
+      </button>
+    </div>
+  </div>
+
   <!-- Calibration UI (新規) -->
   <div id="calibration-prompt" class="calibration-ui" hidden>
     <div class="calibration-content">
@@ -120,15 +137,15 @@
           <span>0m</span>
           <span id="sonar-max-distance">1km</span>
         </div>
-        <!-- 上段：距離バー -->
+        <!-- 上段:距離バー -->
         <div class="distance-track">
           <canvas id="distance-gradient-canvas"></canvas>
           <div id="distance-markers-container"></div>
         </div>
-        <!-- 下段：標高断面図 -->
+        <!-- 下段:標高断面図 -->
         <div class="elevation-profile">
           <canvas id="elevation-profile-canvas"></canvas>
-          <div class="current-position-marker" title="現在地（距離0m）">📍</div>
+          <div class="current-position-marker" title="現在地(距離0m)">📍</div>
         </div>
       </div>
 
@@ -166,7 +183,7 @@
           </div>
         </div>
         
-        <!-- ピッチインジケーター（左） -->
+        <!-- ピッチインジケーター(左) -->
         <div id="pitch-indicator-left" class="pitch-indicator">
           <div class="pitch-scale">
             <div class="pitch-line" data-angle="30"><span>+30°</span></div>
@@ -180,7 +197,7 @@
           </div>
         </div>
         
-        <!-- ピッチインジケーター（右） -->
+        <!-- ピッチインジケーター(右) -->
         <div id="pitch-indicator-right" class="pitch-indicator">
           <div class="pitch-scale">
             <div class="pitch-line" data-angle="30"><span>+30°</span></div>

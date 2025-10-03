@@ -1,8 +1,7 @@
 /**
- * app.js - リファクタリング版（AR修正版）
+ * app.js - iOS権限対応版
  * 依存性注入パターン実装済み
- * グローバル関数はwindow.switchViewのみ残存
- * マネージャーを各ビューのコンストラクタに注入
+ * iOS 13+のセンサー権限リクエスト対応
  */
 
 /* ======== Service Worker ======== */
@@ -59,7 +58,16 @@ async function init() {
   orientationMgr = new OrientationManager();
   orientationMgr.onUpdate = handleOrientationUpdate;
   orientationMgr.onModeChange = handleOrientationModeChange;
-  await orientationMgr.init();
+  
+  // iOS権限チェック
+  if (orientationMgr.needsIOSPermission()) {
+    debugLog('📱 iOS 13+: センサー権限が必要です');
+    showIOSPermissionPrompt();
+    // センサーは権限取得後に初期化される
+  } else {
+    // iOS以外、またはiOS 12以下は通常通り初期化
+    await orientationMgr.init();
+  }
   
   // 3. AR可用性チェック
   arCapable = await checkARCapability();
@@ -81,7 +89,7 @@ async function init() {
   );
   geoMgr.addCheckpointMarkers(stateMgr.checkpoints, stateMgr.completedIds);
   
-  // 7. ビュー初期化（マネージャーを注入）
+  // 7. ビュー初期化(マネージャーを注入)
   compassView = new CompassView({
     containerId: 'compass-view',
     geoMgr: geoMgr
@@ -131,6 +139,62 @@ async function init() {
   debugLog('🎉 アプリケーション初期化完了');
 }
 
+/* ======== iOS権限プロンプト表示 ======== */
+function showIOSPermissionPrompt() {
+  const prompt = document.getElementById('ios-permission-prompt');
+  if (prompt) {
+    prompt.hidden = false;
+    debugLog('📱 iOS権限プロンプトを表示');
+  }
+}
+
+function hideIOSPermissionPrompt() {
+  const prompt = document.getElementById('ios-permission-prompt');
+  if (prompt) {
+    prompt.hidden = true;
+  }
+}
+
+/* ======== iOS権限リクエスト処理 ======== */
+async function handleIOSPermissionRequest() {
+  debugLog('📱 iOS権限リクエストを実行...');
+  
+  const result = await orientationMgr.requestIOSPermission();
+  
+  if (result.success) {
+    debugLog('✅ iOS権限取得成功');
+    hideIOSPermissionPrompt();
+    
+    showNotification({
+      type: 'success',
+      message: '✅ センサーへのアクセスが許可されました',
+      duration: 3000
+    });
+    
+    // キャリブレーションUIチェック
+    checkCalibrationUI();
+  } else if (result.permission === 'denied') {
+    debugLog('❌ iOS権限が拒否されました');
+    hideIOSPermissionPrompt();
+    
+    alert(
+      '⚠️ センサーへのアクセスが拒否されました\n\n' +
+      'コンパス、AR、ソナー機能を使用するには、\n' +
+      'Safari設定 > プライバシーとセキュリティ > モーションと画面の向き\n' +
+      'から許可してください。\n\n' +
+      'その後、ページを再読み込みしてください。'
+    );
+  } else {
+    debugLog(`❌ iOS権限リクエスト失敗: ${result.error || 'unknown'}`);
+    hideIOSPermissionPrompt();
+    
+    alert(
+      '❌ センサー権限の取得に失敗しました\n\n' +
+      'ページを再読み込みして、もう一度お試しください。'
+    );
+  }
+}
+
 /* ======== AR可用性チェック ======== */
 async function checkARCapability() {
   try {
@@ -169,7 +233,6 @@ function handleOrientationUpdate(data) {
   } else if (currentView === 'sonar') {
     sonarView.update(currentPosition, heading, stateMgr.checkpoints, stateMgr.completedIds);
   } else if (currentView === 'ar' && arView) {
-    // ARViewのupdate()メソッドにheading, pitchを渡す
     arView.update(currentPosition, heading, pitch);
     arView.updateSensorMode(data.mode);
   }
@@ -218,6 +281,17 @@ function handleCalibrate() {
 
 /* ======== イベントリスナー ======== */
 function setupEventListeners() {
+  // iOS権限リクエスト
+  document.getElementById('request-ios-permission')?.addEventListener('click', handleIOSPermissionRequest);
+  document.getElementById('close-ios-permission')?.addEventListener('click', () => {
+    hideIOSPermissionPrompt();
+    showNotification({
+      type: 'warning',
+      message: '⚠️ センサー権限が未許可です。コンパス/AR/ソナーは使用できません。',
+      duration: 5000
+    });
+  });
+  
   document.getElementById('get-location-btn')?.addEventListener('click', getCurrentLocation);
   
   document.getElementById('photo-btn')?.addEventListener('click', () => {
@@ -564,6 +638,12 @@ function openPhotoModal(src) {
 
 /* ======== ビュー切替 ======== */
 function switchView(view) {
+  // iOS権限チェック
+  if ((view === 'compass' || view === 'sonar' || view === 'ar') && orientationMgr.needsIOSPermission()) {
+    showIOSPermissionPrompt();
+    return;
+  }
+  
   if (view === 'ar' && !arCapable) {
     alert('AR機能は利用できません。\n\n原因:\n・カメラがない\n・センサーが非対応\n・権限が拒否されている');
     return;
@@ -658,7 +738,7 @@ function showNotification({ type = 'info', message, duration = 3000 }) {
     top: 80px;
     left: 50%;
     transform: translateX(-50%);
-    background: ${type === 'error' ? '#e53e3e' : type === 'warning' ? '#ed8936' : '#667eea'};
+    background: ${type === 'error' ? '#e53e3e' : type === 'warning' ? '#ed8936' : type === 'success' ? '#48bb78' : '#667eea'};
     color: #fff;
     padding: 12px 20px;
     border-radius: 8px;
