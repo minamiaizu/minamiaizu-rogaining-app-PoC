@@ -247,7 +247,7 @@ class ARView {
     for (let offset = -displayRange; offset <= displayRange; offset += 5) {
       const angle = (heading + offset + 360) % 360;
       const normalizedOffset = offset / fovHDeg;
-      const x = w/2 - normalizedOffset * w;
+      const x = w/2 + normalizedOffset * w;
       
       // 画面外は描画しない
       if (x < 0 || x > w) continue;
@@ -329,7 +329,7 @@ class ARView {
       
       // 画面座標計算（ピッチ補正済み）
       const relRad = rel * Math.PI / 180;
-      const x = w/2 - (relRad / this.options.fovH) * w;
+      const x = w/2 + (relRad / this.options.fovH) * w;
       const y = h/2 - screenElevAngle / this.options.fovV * h;
       
       // 画面外チェック（マージン付き）
