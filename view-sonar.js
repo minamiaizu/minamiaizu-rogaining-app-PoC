@@ -167,7 +167,7 @@ class SonarView {
     ctx.save();
     ctx.translate(cx, cy);
     const heading = this.orientationMgr?.getHeading() || 0;
-    ctx.rotate(heading * Math.PI / 180);  // 修正: +headingで正しい回転方向
+    ctx.rotate(-heading * Math.PI / 180);
     ctx.translate(-cx, -cy);
     
     // 背景
