@@ -4,7 +4,8 @@
  * AbsoluteOrientationSensor + DeviceOrientationEvent + キャリブレーション
  * 
  * 修正版: 座標系統一 - iOS/Android両対応
- * バージョン: 1.4.0 - 2025-01-03
+ * バージョン: 1.5.0 - 2025-01-03
+ * 変更点: Android座標系補正の条件を修正（absolute属性に関わらず補正）
  */
 
 class OrientationManager {
@@ -350,11 +351,10 @@ class OrientationManager {
         
         let rawHeading = e.alpha;
         
-        // 🔧 修正: Androidの座標系を反転してiOSと統一
-        // Android: alphaは時計回りで増加 → 反転してiOSと同じ座標系に
-        if (this.isAndroid && e.absolute !== true) {
+        // 🔧 修正: Androidの座標系補正（absolute属性に関わらず適用）
+        if (this.isAndroid) {
           rawHeading = (360 - rawHeading) % 360;
-          this.log(`🔄 Android座標系反転: ${e.alpha.toFixed(1)}° → ${rawHeading.toFixed(1)}°`);
+          this.log(`🔄 Android座標系補正: ${e.alpha.toFixed(1)}° → ${rawHeading.toFixed(1)}°`);
         }
         
         if (e.absolute === true) {
@@ -600,7 +600,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ OrientationManager v1.4.0 (座標系統一版) 読み込み完了');
+  debugLog('✅ OrientationManager v1.5.0 (Android座標系補正対応) 読み込み完了');
 } else {
-  console.log('[OrientationManager] v1.4.0 - Coordinate system unified');
+  console.log('[OrientationManager] v1.5.0 - Android coordinate system fix applied');
 }
