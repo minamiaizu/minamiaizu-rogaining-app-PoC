@@ -357,9 +357,9 @@ class OrientationManager {
     ) * 180 / Math.PI;
     
     // Android補正
-    //if (this.isAndroid) {
-    //  yaw = (360 - yaw) % 360;
-    //}
+    if (this.isAndroid) {
+      yaw = (360 - yaw) % 360;
+    }
     
     return {
       yaw: (yaw + 360) % 360,
@@ -380,17 +380,16 @@ class OrientationManager {
         let rawHeading = e.alpha;
         
         // 🔧 修正: Androidの座標系補正（absolute属性に関わらず適用）
-        if (this.isAndroid) {
-          rawHeading = (360 - rawHeading) % 360;
-          this.log('🔄 Android座標系に３６０°－値');
-          
+        //if (this.isAndroid) {
+        //  rawHeading = (360 - rawHeading) % 360;
+        //  
           // 初回のみログ出力（ログの氾濫を防ぐ）
-          if (!androidCorrectionLogged) {
-            this.log(`🔄 Android座標系補正適用: ${e.alpha.toFixed(1)}° → ${rawHeading.toFixed(1)}°`);
-            this.log(`   this.isAndroid = ${this.isAndroid}`);
-            androidCorrectionLogged = true;
-          }
-        }
+        //  if (!androidCorrectionLogged) {
+        //    this.log(`🔄 Android座標系補正適用: ${e.alpha.toFixed(1)}° → ${rawHeading.toFixed(1)}°`);
+        //    this.log(`   this.isAndroid = ${this.isAndroid}`);
+        //    androidCorrectionLogged = true;
+        //  }
+        //}
         
         if (e.absolute === true) {
           // 絶対モード(磁北基準)
