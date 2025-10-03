@@ -329,7 +329,7 @@ class ARView {
       
       // 画面座標計算（ピッチ補正済み）
       const relRad = rel * Math.PI / 180;
-      const x = w/2 + (relRad / this.options.fovH) * w;
+      const x = w/2 - (relRad / this.options.fovH) * w;
       const y = h/2 - screenElevAngle / this.options.fovV * h;
       
       // 画面外チェック（マージン付き）
