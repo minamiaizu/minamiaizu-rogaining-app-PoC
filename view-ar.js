@@ -241,8 +241,7 @@ class ARView {
     const fovHDeg = this.options.fovH * 180 / Math.PI;
     const displayRange = fovHDeg / 2 + 10;
     
-    const rawHeading = this.orientationMgr?.getHeading() || 0;
-    const heading = (360 - rawHeading) % 360;  // ✅ コンパス方位に変換
+    const heading = this.orientationMgr?.getHeading() || 0;
     
     // 5度刻みで目盛りを描画
     for (let offset = -displayRange; offset <= displayRange; offset += 5) {
@@ -311,8 +310,7 @@ class ARView {
       
       // 方位計算
       const b = this.geoMgr?.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng) || 0;
-      const rawHeading = this.orientationMgr?.getHeading() || 0;
-      const actualHeading = (360 - rawHeading) % 360;  // ✅ コンパス方位に変換
+      const actualHeading = this.orientationMgr?.getHeading() || 0;
       let rel = ((b - actualHeading + 540) % 360) - 180; // -180～180
       
       // FOV外は描画しない
