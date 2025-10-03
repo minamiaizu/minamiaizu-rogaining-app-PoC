@@ -6,6 +6,9 @@
  * 
  * 修正版: iPad対応 - 背面カメラ確実選択
  * バージョン: 1.2.0 - 2025-01-03
+ * 
+ * 改修: 距離に応じたCP色変更機能追加
+ * 改修日: 2025-01-04
  */
 
 class ARView {
@@ -383,6 +386,28 @@ class ARView {
     const sizes = this._getMarkerSizeByRange();
     let drawnCount = 0;
     
+    // ========== 追加: 距離範囲の計算 ==========
+    const distances = [];
+    checkpoints.forEach(cp => {
+      const d = this._getCachedDistance(
+        cp.id, 
+        currentPosition.lat, 
+        currentPosition.lng, 
+        cp.lat, 
+        cp.lng
+      );
+      
+      // レンジ内のすべてのCP（完了・未完了問わず）
+      if (d <= this.options.range) {
+        distances.push(d);
+      }
+    });
+    
+    // 最小・最大距離
+    const minDist = distances.length > 0 ? Math.min(...distances) : 0;
+    const maxDist = distances.length > 0 ? Math.max(...distances) : this.options.range;
+    // ==========================================
+    
     checkpoints.forEach(cp => {
       // 距離計算(キャッシュ使用)
       const d = this._getCachedDistance(cp.id, currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
@@ -417,15 +442,23 @@ class ARView {
       // 画面外チェック(マージン付き)
       if (x < -50 || x > w + 50 || y < -50 || y > h + 50) return;
       
+      // ========== 修正: 色の決定 ==========
+      // すべてのCPで距離ベースの色を使用
+      const markerColor = this._getDistanceColor(d, minDist, maxDist);
+      
+      // 完了状態は縁の色で表現
+      const borderColor = completedCheckpoints.has(cp.id) ? '#48bb78' : '#fff';
+      // ====================================
+      
       // マーカー描画
       const r = sizes.marker / 2;
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI*2);
-      ctx.fillStyle = completedCheckpoints.has(cp.id) ? '#48bb78' : '#667eea';
+      ctx.fillStyle = markerColor;
       ctx.fill();
       
-      // 白い縁
-      ctx.strokeStyle = '#fff';
+      // 縁（完了状態を示す）
+      ctx.strokeStyle = borderColor;
       ctx.lineWidth = 3;
       ctx.stroke();
       
@@ -969,6 +1002,33 @@ class ARView {
     return this.distanceCache[cpId] || 0;
   }
   
+  /**
+   * 距離に応じた色を計算（view-sonar.jsと同じロジック）
+   * @param {number} distance - 対象までの距離(m)
+   * @param {number} minDist - 範囲内の最小距離(m)
+   * @param {number} maxDist - 範囲内の最大距離(m)
+   * @returns {string} HSL色文字列
+   */
+  _getDistanceColor(distance, minDist, maxDist) {
+    // 距離差がない場合は緑
+    if (maxDist === minDist) return 'hsl(120, 80%, 50%)';
+    
+    // 0.0(最近)〜1.0(最遠)に正規化
+    const normalized = (distance - minDist) / (maxDist - minDist);
+    
+    let hue;
+    // 前半50%: 青(240°) → 緑(120°)
+    if (normalized <= 0.5) {
+      hue = 240 - (120 * normalized * 2);
+    } 
+    // 後半50%: 緑(120°) → 赤(0°)
+    else {
+      hue = 120 - (120 * (normalized - 0.5) * 2);
+    }
+    
+    return `hsl(${hue}, 80%, 50%)`;
+  }
+  
   log(message) {
     if (typeof debugLog === 'function') {
       debugLog(message);
@@ -985,7 +1045,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ ARView v1.2.0 (iPad対応版) 読み込み完了');
+  debugLog('✅ ARView v1.2.0 (iPad対応版 + 距離色変更機能) 読み込み完了');
 } else {
-  console.log('[ARView] v1.2.0 - iPad camera support enhanced');
+  console.log('[ARView] v1.2.0 - iPad camera support enhanced + Distance color feature added');
 }
