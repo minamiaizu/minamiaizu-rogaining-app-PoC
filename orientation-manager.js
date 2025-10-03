@@ -379,12 +379,12 @@ class OrientationManager {
     
     // Yaw (方位角) - Z軸周りの回転
     let yaw = Math.atan2(
-      2.0 * (w * z + x * y),
+      -2.0 * (w * z + x * y),
       1.0 - 2.0 * (y * y + z * z)
     ) * 180 / Math.PI;
     
     // 🔧 Android座標系補正: 東西反転
-    yaw = (270 - yaw) % 360;
+    //yaw = (270 - yaw) % 360;
     
     // Beta (前後傾斜): -180°~180°
     const beta = Math.atan2(
