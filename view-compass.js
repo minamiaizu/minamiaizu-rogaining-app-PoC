@@ -1,6 +1,9 @@
 /**
- * CompassView - コンパス表示管理（リファクタリング版）
+ * CompassView - コンパス表示管理（座標系統一版）
  * 依存性注入パターンを使用し、geoMgrから直接メソッドを使用
+ * 
+ * 修正版: iOS/Android両対応 - 回転方向を-headingに統一
+ * バージョン: 1.1.0 - 2025-01-03
  */
 
 class CompassView {
@@ -116,14 +119,15 @@ class CompassView {
     }
   }
   
-  // ========== 方位更新 ==========
+  // ========== 方位更新（修正版：-headingで回転） ==========
   updateHeading(heading) {
     this.currentHeading = heading;
     
-    // コンパス円を回転（ジャイロコンパス風：方位盤が回転）
+    // 🔧 修正: ジャイロコンパス風の正しい回転方向
+    // デバイスが東を向く(90°) → 方位盤は反時計回りに90°回転(-90deg)
     if (this.compassCircle) {
       const normalizedHeading = ((heading % 360) + 360) % 360;
-      this.compassCircle.style.transform = `rotate(${normalizedHeading}deg)`;
+      this.compassCircle.style.transform = `rotate(-${normalizedHeading}deg)`;
     }
     
     // 方位表示を更新
@@ -132,15 +136,15 @@ class CompassView {
     }
   }
   
-  // ========== チェックポイントマーカー ==========
+  // ========== チェックポイントマーカー（修正版：-headingで回転） ==========
   updateCheckpointMarkers(currentPosition, heading, checkpoints, completedIds) {
     if (!this.markersContainer || !currentPosition || !this.geoMgr) return;
     
     this.markersContainer.innerHTML = '';
     
-    // マーカーコンテナ全体を方位盤と同じ角度で回転
+    // 🔧 修正: マーカーコンテナ全体を方位盤と同じ方向(-heading)で回転
     const normalizedHeading = ((heading % 360) + 360) % 360;
-    this.markersContainer.style.transform = `rotate(${normalizedHeading}deg)`;
+    this.markersContainer.style.transform = `rotate(-${normalizedHeading}deg)`;
     
     // 距離を計算
     let distances = [];
@@ -177,8 +181,8 @@ class CompassView {
       marker.style.left = x + 'px';
       marker.style.top = y + 'px';
       
-      // マーカー内の数字を水平に保つため、逆回転を適用
-      marker.style.transform = `rotate(-${normalizedHeading}deg)`;
+      // 🔧 修正: マーカー内の数字を水平に保つため、逆回転(+heading)を適用
+      marker.style.transform = `rotate(${normalizedHeading}deg)`;
       
       marker.title = `${cp.name}: ${Math.round(d)}m`;
       
@@ -306,7 +310,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ CompassView (Refactored) 読み込み完了');
+  debugLog('✅ CompassView v1.1.0 (座標系統一版) 読み込み完了');
 } else {
-  console.log('[CompassView] Refactored version loaded');
+  console.log('[CompassView] v1.1.0 - Coordinate system unified');
 }

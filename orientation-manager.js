@@ -3,8 +3,8 @@
  * iOS/Android/Windows/Linux対応
  * AbsoluteOrientationSensor + DeviceOrientationEvent + キャリブレーション
  * 
- * 修正版: iPadOS 13+対応 - User-Agent検出を改善
- * バージョン: 1.3.0 - 2025-01-03
+ * 修正版: 座標系統一 - iOS/Android両対応
+ * バージョン: 1.4.0 - 2025-01-03
  */
 
 class OrientationManager {
@@ -180,6 +180,8 @@ class OrientationManager {
       
       this.deviceOrientationListener = (e) => {
         if (e.webkitCompassHeading !== undefined) {
+          // iOS: webkitCompassHeadingは正しい磁北基準の方位
+          // そのまま使用（反転不要）
           this.currentHeading = e.webkitCompassHeading;
           this.devicePitch = e.beta || 0;
           this.deviceRoll = e.gamma || 0;
@@ -254,6 +256,7 @@ class OrientationManager {
         const q = this.absoluteSensor.quaternion;
         const angles = this.quaternionToEuler(q);
         
+        // Android: Quaternionから計算した方位をそのまま使用
         this.currentHeading = angles.yaw;
         this.devicePitch = angles.pitch;
         this.deviceRoll = angles.roll;
@@ -337,7 +340,7 @@ class OrientationManager {
     };
   }
   
-  // ========== DeviceOrientationEvent ==========
+  // ========== DeviceOrientationEvent（修正版：Android座標系統一） ==========
   async startDeviceOrientation() {
     return new Promise((resolve) => {
       let resolved = false;
@@ -345,7 +348,14 @@ class OrientationManager {
       this.deviceOrientationListener = (e) => {
         if (e.alpha === null) return;
         
-        const rawHeading = e.alpha;
+        let rawHeading = e.alpha;
+        
+        // 🔧 修正: Androidの座標系を反転してiOSと統一
+        // Android: alphaは時計回りで増加 → 反転してiOSと同じ座標系に
+        if (this.isAndroid && e.absolute !== true) {
+          rawHeading = (360 - rawHeading) % 360;
+          this.log(`🔄 Android座標系反転: ${e.alpha.toFixed(1)}° → ${rawHeading.toFixed(1)}°`);
+        }
         
         if (e.absolute === true) {
           // 絶対モード(磁北基準)
@@ -590,7 +600,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ OrientationManager v1.3.0 (iPadOS対応版) 読み込み完了');
+  debugLog('✅ OrientationManager v1.4.0 (座標系統一版) 読み込み完了');
 } else {
-  console.log('[OrientationManager] v1.3.0 - iPadOS support loaded');
+  console.log('[OrientationManager] v1.4.0 - Coordinate system unified');
 }
