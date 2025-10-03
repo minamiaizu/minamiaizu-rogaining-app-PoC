@@ -1,8 +1,11 @@
 /**
- * ARView - AR表示管理（画面向き対応版 - シンプル再構築）
+ * ARView - AR表示管理(画面向き対応版 - シンプル再構築)
  * Portrait/Landscape両対応のピッチ補正
  * iOS/Android/Windows/Linux対応のカメラAR
  * 依存性注入パターンを使用し、グローバル変数への依存を排除
+ * 
+ * 修正版: iPad対応 - 背面カメラ確実選択
+ * バージョン: 1.2.0 - 2025-01-03
  */
 
 class ARView {
@@ -51,13 +54,55 @@ class ARView {
     // デバッグ
     this._lastDebugLog = 0;
     
-    // プラットフォーム検出
-    this.isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    // プラットフォーム検出（iPadOS対応強化）
+    this.isIOS = this.detectIOS();
     this.isAndroid = /Android/.test(navigator.userAgent);
+    this.isIPad = this.detectIPad();
     
     if (!this.stateMgr || !this.geoMgr || !this.orientationMgr) {
       this.log('⚠️ StateManager/GeoManager/OrientationManagerが注入されていません');
     }
+  }
+  
+  // ========== iOS/iPadOS検出（強化版） ==========
+  detectIOS() {
+    const ua = navigator.userAgent;
+    
+    // 従来のiOS検出
+    if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) {
+      return true;
+    }
+    
+    // iPadOS 13+検出
+    if (/Macintosh/.test(ua) && navigator.maxTouchPoints && navigator.maxTouchPoints > 1) {
+      return true;
+    }
+    
+    // DeviceOrientationEvent.requestPermissionの存在確認
+    if (typeof DeviceOrientationEvent !== 'undefined' && 
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  detectIPad() {
+    const ua = navigator.userAgent;
+    
+    // iPadOS 13+検出（Macintosh UA + タッチデバイス）
+    if (/Macintosh/.test(ua) && navigator.maxTouchPoints && navigator.maxTouchPoints > 1) {
+      this.log('✅ iPadOS検出: Macintosh UA + タッチデバイス');
+      return true;
+    }
+    
+    // 従来のiPad検出
+    if (/iPad/.test(ua)) {
+      this.log('✅ iPad検出: 従来のUA');
+      return true;
+    }
+    
+    return false;
   }
   
   // ========== 開始 ==========
@@ -73,11 +118,12 @@ class ARView {
     // デバッグボタンを追加
     this._addDebugButtons();
     
-    // カメラ制約（プラットフォーム別）
+    // カメラ制約（プラットフォーム別・iPad対応強化）
     const constraints = this._getCameraConstraints();
     
     try {
       this.log('📷 ARカメラ起動試行...');
+      this.log(`📱 検出デバイス: ${this.isIPad ? 'iPad' : this.isIOS ? 'iPhone/iPod' : this.isAndroid ? 'Android' : 'Other'}`);
       
       this.stream = await navigator.mediaDevices.getUserMedia(constraints);
       this.video.srcObject = this.stream;
@@ -87,17 +133,22 @@ class ARView {
       this.startTimer();
       this._startRenderLoop();
       
-      this.log('✅ ARカメラ起動成功');
+      this.log('✅ ARカメラ起動成功（背面カメラ優先）');
     } catch (error) {
-      this.log(`❌ ARカメラ起動失敗: ${error.message}`);
+      this.log(`⚠️ ARカメラ起動失敗(1回目): ${error.message}`);
       
-      // フォールバック: より緩い制約で再試行
+      // フォールバック1: より緩い制約で背面カメラを再試行
       try {
         const fallbackConstraints = {
-          video: { facingMode: 'user' },
+          video: {
+            facingMode: 'environment',  // 背面カメラ優先
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
           audio: false
         };
         
+        this.log('🔄 フォールバック1: 背面カメラ再試行...');
         this.stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
         this.video.srcObject = this.stream;
         await this.video.play();
@@ -106,27 +157,57 @@ class ARView {
         this.startTimer();
         this._startRenderLoop();
         
-        this.log('✅ ARカメラ起動（フロント）');
+        this.log('✅ ARカメラ起動（フォールバック - 背面カメラ）');
       } catch (e2) {
-        alert('カメラの使用許可が必要です。\nブラウザの設定を確認してください。');
-        throw e2;
+        this.log(`⚠️ ARカメラ起動失敗(2回目): ${e2.message}`);
+        
+        // フォールバック2: 最終手段としてフロントカメラを試行
+        try {
+          const finalFallback = {
+            video: { facingMode: 'user' },
+            audio: false
+          };
+          
+          this.log('🔄 フォールバック2: フロントカメラ試行...');
+          this.stream = await navigator.mediaDevices.getUserMedia(finalFallback);
+          this.video.srcObject = this.stream;
+          await this.video.play();
+          
+          this._resizeCanvas();
+          this.startTimer();
+          this._startRenderLoop();
+          
+          this.log('⚠️ ARカメラ起動（フロントカメラ）');
+          
+          // ユーザーに通知
+          if (this.isIPad || this.isIOS) {
+            alert('⚠️ 背面カメラの起動に失敗したため、フロントカメラを使用しています。\n\nSafariの設定でカメラのアクセス許可を確認してください。');
+          }
+        } catch (e3) {
+          this.log(`❌ ARカメラ起動完全失敗: ${e3.message}`);
+          alert('カメラの使用許可が必要です。\nブラウザの設定を確認してください。');
+          throw e3;
+        }
       }
     }
   }
   
   _getCameraConstraints() {
-    if (this.isIOS) {
-      // iOS: 背面カメラ優先
+    if (this.isIPad || this.isIOS) {
+      // iOS/iPadOS: exactを使わず、環境カメラを優先
+      // iPadではexact制約が不安定なため、通常のfacingModeを使用
+      this.log('📱 iOS/iPadOS用カメラ制約を使用（exact制約なし）');
       return {
         video: {
-          facingMode: { exact: 'environment' },
+          facingMode: 'environment',  // { exact: 'environment' } から変更
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         },
         audio: false
       };
     } else if (this.isAndroid) {
-      // Android: 背面カメラ優先（exactを使わない）
+      // Android: 背面カメラ優先(exactを使わない)
+      this.log('📱 Android用カメラ制約を使用');
       return {
         video: {
           facingMode: 'environment',
@@ -137,6 +218,7 @@ class ARView {
       };
     } else {
       // PC/その他: フロントカメラ
+      this.log('💻 PC用カメラ制約を使用');
       return {
         video: {
           width: { ideal: 1280 },
@@ -237,7 +319,7 @@ class ARView {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     
-    // FOVに応じた表示範囲を計算（FOVの半分±余裕）
+    // FOVに応じた表示範囲を計算(FOVの半分±余裕)
     const fovHDeg = this.options.fovH * 180 / Math.PI;
     const displayRange = fovHDeg / 2 + 10;
     
@@ -252,7 +334,7 @@ class ARView {
       // 画面外は描画しない
       if (x < 0 || x > w) continue;
       
-      // 主要方位（N/E/S/W）
+      // 主要方位(N/E/S/W)
       if (Math.abs(angle - 0) < 2.5 || Math.abs(angle - 360) < 2.5) {
         ctx.fillStyle = '#ff3030';
         ctx.font = 'bold 20px system-ui';
@@ -274,7 +356,7 @@ class ARView {
         ctx.fillText('W', x, tapeHeight/2);
       }
       
-      // 目盛り線（5度刻み）
+      // 目盛り線(5度刻み)
       const isCardinal = Math.abs(angle - 0) < 2.5 || Math.abs(angle - 90) < 2.5 || 
                         Math.abs(angle - 180) < 2.5 || Math.abs(angle - 270) < 2.5 || 
                         Math.abs(angle - 360) < 2.5;
@@ -302,7 +384,7 @@ class ARView {
     let drawnCount = 0;
     
     checkpoints.forEach(cp => {
-      // 距離計算（キャッシュ使用）
+      // 距離計算(キャッシュ使用)
       const d = this._getCachedDistance(cp.id, currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       
       // レンジ外は早期リターン
@@ -311,7 +393,7 @@ class ARView {
       // 方位計算
       const b = this.geoMgr?.bearing(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng) || 0;
       const actualHeading = this.orientationMgr?.getHeading() || 0;
-      let rel = ((b - actualHeading + 540) % 360) - 180; // -180～180
+      let rel = ((b - actualHeading + 540) % 360) - 180; // -180~180
       
       // FOV外は描画しない
       const fovHDeg = this.options.fovH * 180 / Math.PI;
@@ -327,12 +409,12 @@ class ARView {
       const devicePitchRad = correctedPitchDeg * Math.PI / 180;
       const screenElevAngle = elevAngle - devicePitchRad;
       
-      // 画面座標計算（ピッチ補正済み）
+      // 画面座標計算(ピッチ補正済み)
       const relRad = rel * Math.PI / 180;
       const x = w/2 + (relRad / this.options.fovH) * w;
       const y = h/2 - screenElevAngle / this.options.fovV * h;
       
-      // 画面外チェック（マージン付き）
+      // 画面外チェック(マージン付き)
       if (x < -50 || x > w + 50 || y < -50 || y > h + 50) return;
       
       // マーカー描画
@@ -382,7 +464,7 @@ class ARView {
       ctx.fillText(`⚠️ 範囲内にCPなし (${this.options.range}m)`, w/2, h/2);
     }
     
-    // デバッグ情報（デバッグモードONの時のみ）
+    // デバッグ情報(デバッグモードONの時のみ)
     if (this.options.debugMode) {
       this._drawDebugInfo(ctx, w, h);
     }
@@ -408,7 +490,7 @@ class ARView {
     ctx.fillStyle = '#00ff00';
     
     // プラットフォーム情報
-    ctx.fillText(`📱 Platform: ${this.isIOS ? 'iOS' : this.isAndroid ? 'Android' : 'Other'}`, 15, y); y += lineHeight;
+    ctx.fillText(`📱 Platform: ${this.isIPad ? 'iPad' : this.isIOS ? 'iPhone/iPod' : this.isAndroid ? 'Android' : 'Other'}`, 15, y); y += lineHeight;
     
     // 画面の向き
     const orientation = this._getScreenOrientation();
@@ -470,7 +552,7 @@ class ARView {
     this.updateNearestInfo(currentPosition, checkpoints, completedIds);
   }
   
-  // ========== ピッチインジケーター（シンプル再構築版） ==========
+  // ========== ピッチインジケーター(シンプル再構築版) ==========
   updatePitchIndicator(pitch) {
     const leftMarker = document.querySelector('#pitch-indicator-left .pitch-marker');
     const rightMarker = document.querySelector('#pitch-indicator-right .pitch-marker');
@@ -480,7 +562,7 @@ class ARView {
     // シンプルな補正: 引数のpitchを信頼して使用
     const correctedPitch = this._correctPitchForScreen(pitch);
     
-    // -30°～+30°の範囲に制限
+    // -30°~+30°の範囲に制限
     const clampedPitch = Math.max(-30, Math.min(30, correctedPitch));
     
     // インジケーター位置を計算
@@ -499,26 +581,26 @@ class ARView {
   }
   
   /**
-   * 画面の向きに応じてピッチを補正（シンプル版）
+   * 画面の向きに応じてピッチを補正(シンプル版)
    */
   _correctPitchForScreen(rawPitch) {
     const orientation = this._getScreenOrientation();
     
-    // Portrait（縦持ち）: beta = 90°が水平なので、90を引く
+    // Portrait(縦持ち): beta = 90°が水平なので、90を引く
     if (orientation.includes('portrait')) {
       return rawPitch - 90;
     }
     
-    // Landscape（横持ち）: gammaを使用
+    // Landscape(横持ち): gammaを使用
     if (orientation.includes('landscape')) {
       const roll = this.orientationMgr?.getRoll() || 0;
       
-      // landscape-secondary（ホームボタンが左）は符号を反転
+      // landscape-secondary(ホームボタンが左)は符号を反転
       if (orientation === 'landscape-secondary') {
         return -roll;
       }
       
-      // landscape-primary（ホームボタンが右）はそのまま
+      // landscape-primary(ホームボタンが右)はそのまま
       return roll;
     }
     
@@ -527,7 +609,7 @@ class ARView {
   }
   
   /**
-   * 現在の補正済みピッチを取得（描画用）
+   * 現在の補正済みピッチを取得(描画用)
    */
   _getCurrentCorrectedPitch() {
     const rawPitch = this.orientationMgr?.getPitch() || 0;
@@ -535,7 +617,7 @@ class ARView {
   }
   
   /**
-   * 画面の向きを取得（シンプル版）
+   * 画面の向きを取得(シンプル版)
    */
   _getScreenOrientation() {
     // 最優先: Screen Orientation API
@@ -619,9 +701,9 @@ class ARView {
         display.textContent = this._formatTime(this.secondsLeft);
       }
       
-      // 段階的機能制限（3分経過で警告）
+      // 段階的機能制限(3分経過で警告)
       if (this.secondsLeft === 120) {
-        this.log('⚠️ AR残り2分：バッテリー節約のため間もなく終了します');
+        this.log('⚠️ AR残り2分:バッテリー節約のため間もなく終了します');
       }
       
       if (this.secondsLeft <= 0) {
@@ -763,13 +845,20 @@ class ARView {
     report.push(`OrientationMgr: ${this.orientationMgr ? '✅' : '❌'}`);
     report.push('');
     
-    // 2. 画面の向き
+    // 2. デバイス情報
+    report.push('【デバイス情報】');
+    report.push(`Platform: ${this.isIPad ? 'iPad' : this.isIOS ? 'iPhone/iPod' : this.isAndroid ? 'Android' : 'Other'}`);
+    report.push(`User Agent: ${navigator.userAgent.substring(0, 60)}...`);
+    report.push(`Max Touch Points: ${navigator.maxTouchPoints}`);
+    report.push('');
+    
+    // 3. 画面の向き
     report.push('【画面の向き】');
     const orientation = this._getScreenOrientation();
     report.push(`Orientation: ${orientation}`);
     report.push('');
     
-    // 3. センサー状態
+    // 4. センサー状態
     report.push('【センサー状態】');
     if (this.orientationMgr) {
       const heading = this.orientationMgr.getHeading();
@@ -789,7 +878,7 @@ class ARView {
     }
     report.push('');
     
-    // 4. 位置情報
+    // 5. 位置情報
     report.push('【位置情報】');
     const pos = this.stateMgr?.currentPosition;
     if (pos) {
@@ -803,7 +892,7 @@ class ARView {
     }
     report.push('');
     
-    // 5. チェックポイント
+    // 6. チェックポイント
     report.push('【チェックポイント】');
     const checkpoints = this.stateMgr?.checkpoints || [];
     const completedIds = this.stateMgr?.completedIds || new Set();
@@ -823,20 +912,30 @@ class ARView {
     }
     report.push('');
     
-    // 6. カメラ
+    // 7. カメラ
     report.push('【カメラ】');
     report.push(`ストリーム: ${this.stream ? '✅' : '❌'}`);
     report.push(`ビデオ再生中: ${this.video?.paused === false ? '✅' : '❌'}`);
+    
+    // カメラのfacingModeを取得
+    if (this.stream) {
+      const videoTracks = this.stream.getVideoTracks();
+      if (videoTracks.length > 0) {
+        const settings = videoTracks[0].getSettings();
+        report.push(`FacingMode: ${settings.facingMode || 'N/A'}`);
+        report.push(`解像度: ${settings.width}x${settings.height}`);
+      }
+    }
     report.push('');
     
-    // 7. レンダリング
+    // 8. レンダリング
     report.push('【レンダリング】');
     report.push(`アニメID: ${this.animationId ? '✅ 動作中' : '❌ 停止'}`);
     report.push(`FPS制限: ${this.fpsLimit}`);
     report.push(`Canvas: ${this.canvas?.width}x${this.canvas?.height}`);
     report.push('');
     
-    // 8. 設定
+    // 9. 設定
     report.push('【設定】');
     report.push(`レンジ: ${this.options.range}m`);
     report.push(`FOV: ${Math.round(this.options.fovH*180/Math.PI)}° × ${Math.round(this.options.fovV*180/Math.PI)}°`);
@@ -886,7 +985,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ ARView (Simple Signal Processing) 読み込み完了');
+  debugLog('✅ ARView v1.2.0 (iPad対応版) 読み込み完了');
 } else {
-  console.log('[ARView] Simple Signal Processing version loaded');
+  console.log('[ARView] v1.2.0 - iPad camera support enhanced');
 }
