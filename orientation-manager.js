@@ -379,7 +379,7 @@ class OrientationManager {
     
     // Yaw (方位角) - Z軸周りの回転
     let yaw = Math.atan2(
-      -2.0 * (w * z + x * y),
+      2.0 * (w * z + x * y),
       1.0 - 2.0 * (y * y + z * z)
     ) * 180 / Math.PI;
     
@@ -397,6 +397,42 @@ class OrientationManager {
     const gamma = Math.asin(
       Math.max(-1, Math.min(1, sinGamma))
     ) * 180 / Math.PI;
+    
+    // デバッグ: 生のQuaternion値をログ出力
+    console.log('[Quaternion]', {
+      x: x.toFixed(3),
+      y: y.toFixed(3),
+      z: z.toFixed(3),
+      w: w.toFixed(3)
+    });
+    
+    // パターン1: マイナス符号あり（現在のコード）
+    let yaw1 = Math.atan2(
+      -2.0 * (w * z + x * y),
+      1.0 - 2.0 * (y * y + z * z)
+    ) * 180 / Math.PI;
+    yaw1 = (yaw1 + 360) % 360;
+    
+    // パターン2: マイナス符号なし
+    let yaw2 = Math.atan2(
+      2.0 * (w * z + x * y),
+      1.0 - 2.0 * (y * y + z * z)
+    ) * 180 / Math.PI;
+    yaw2 = (yaw2 + 360) % 360;
+    
+    // パターン3: 東西反転補正
+    let yaw3 = (360 - yaw1) % 360;
+    
+    // パターン4: 270度回転＋反転
+    let yaw4 = (270 - yaw1 + 360) % 360;
+    
+    // デバッグ: すべてのパターンをログ出力
+    console.log('[Yaw Patterns]', {
+      pattern1_minus: Math.round(yaw1) + '°',
+      pattern2_plus: Math.round(yaw2) + '°',
+      pattern3_inverse: Math.round(yaw3) + '°',
+      pattern4_270inv: Math.round(yaw4) + '°'
+    });
     
     return {
       yaw: (yaw + 360) % 360,
