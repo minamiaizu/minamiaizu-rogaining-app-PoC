@@ -93,11 +93,11 @@ class OrientationManager {
     }
     
     // 2. 念のため、Linux + モバイルの組み合わせもチェック
-    if (/Linux/.test(ua) && /Mobile/.test(ua)) {
-      this.log('⚠️ Android可能性: Linux + Mobile検出');
-      this.log(`📱 UserAgent: ${ua.substring(0, 80)}...`);
-      return true;
-    }
+    //if (/Linux/.test(ua) && /Mobile/.test(ua)) {
+    //  this.log('⚠️ Android可能性: Linux + Mobile検出');
+    //  this.log(`📱 UserAgent: ${ua.substring(0, 80)}...`);
+    //  return true;
+    //}
     
     this.log(`ℹ️ Android非検出 UA: ${ua.substring(0, 60)}...`);
     return false;
@@ -357,9 +357,9 @@ class OrientationManager {
     ) * 180 / Math.PI;
     
     // Android補正
-    if (this.isAndroid) {
-      yaw = (360 - yaw) % 360;
-    }
+    //if (this.isAndroid) {
+    //  yaw = (360 - yaw) % 360;
+    //}
     
     return {
       yaw: (yaw + 360) % 360,
