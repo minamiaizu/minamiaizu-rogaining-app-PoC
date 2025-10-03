@@ -138,12 +138,12 @@ async function init() {
   
   // ========== 自動起動処理（追加） ==========
   // 現在地を自動取得
-  getCurrentLocation().catch(err => {
-    debugLog(`⚠️ 自動位置取得失敗: ${err.message}`);
-  });
+  //getCurrentLocation().catch(err => {
+  //  debugLog(`⚠️ 自動位置取得失敗: ${err.message}`);
+  //});
   
   // 軌跡記録を自動開始
-  //startTracking();
+  startTracking();
   
   debugLog('🎉 アプリケーション初期化完了');
 }
