@@ -345,6 +345,15 @@ class OrientationManager {
       1.0 - 2.0 * (y * y + z * z)
     ) * 180 / Math.PI;
     
+    // Android補正
+    //if (this.isAndroid) {
+    //if (/Android/.test(navigator.userAgent)) {
+    //  yaw = (360 - yaw) % 360;
+    //}
+    if (navigator.userAgent.indexOf('Android') !== -1) {
+      yaw = (360 - yaw) % 360;
+    }
+    
     // Beta (前後傾斜): -180°~180°
     const beta = Math.atan2(
       2.0 * (w * x + y * z),
@@ -356,12 +365,6 @@ class OrientationManager {
     const gamma = Math.asin(
       Math.max(-1, Math.min(1, sinGamma))
     ) * 180 / Math.PI;
-    
-    // Android補正
-    //if (this.isAndroid) {
-    if (/Android/.test(navigator.userAgent)) {
-      yaw = (360 - yaw) % 360;
-    }
     
     return {
       yaw: (yaw + 360) % 360,
