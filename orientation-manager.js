@@ -4,8 +4,8 @@
  * AbsoluteOrientationSensor + DeviceOrientationEvent + キャリブレーション
  * 
  * 修正版: 座標系統一 - iOS/Android両対応
- * バージョン: 1.5.0 - 2025-01-03
- * 変更点: Android座標系補正の条件を修正（absolute属性に関わらず補正）
+ * バージョン: 1.5.1 - 2025-01-03
+ * 変更点: Android検出を強化、詳細なデバッグログを追加
  */
 
 class OrientationManager {
@@ -43,7 +43,7 @@ class OrientationManager {
     
     // プラットフォーム情報（iPadOS 13+対応）
     this.isIOS = this.detectIOS();
-    this.isAndroid = /Android/.test(navigator.userAgent);
+    this.isAndroid = this.detectAndroid();
     
     // iOS権限状態
     this.iosPermissionGranted = false;
@@ -78,6 +78,28 @@ class OrientationManager {
       return true;
     }
     
+    return false;
+  }
+  
+  // ========== Android検出（詳細ログ付き） ==========
+  detectAndroid() {
+    const ua = navigator.userAgent;
+    
+    // 1. 基本的なAndroid検出
+    if (/Android/.test(ua)) {
+      this.log('✅ Android検出: UserAgentにAndroidを確認');
+      this.log(`📱 UserAgent: ${ua.substring(0, 80)}...`);
+      return true;
+    }
+    
+    // 2. 念のため、Linux + モバイルの組み合わせもチェック
+    if (/Linux/.test(ua) && /Mobile/.test(ua)) {
+      this.log('⚠️ Android可能性: Linux + Mobile検出');
+      this.log(`📱 UserAgent: ${ua.substring(0, 80)}...`);
+      return true;
+    }
+    
+    this.log(`ℹ️ Android非検出 UA: ${ua.substring(0, 60)}...`);
     return false;
   }
   
@@ -345,6 +367,7 @@ class OrientationManager {
   async startDeviceOrientation() {
     return new Promise((resolve) => {
       let resolved = false;
+      let androidCorrectionLogged = false; // 初回ログ用フラグ
       
       this.deviceOrientationListener = (e) => {
         if (e.alpha === null) return;
@@ -352,10 +375,16 @@ class OrientationManager {
         let rawHeading = e.alpha;
         
         // 🔧 修正: Androidの座標系補正（absolute属性に関わらず適用）
-        //if (this.isAndroid) {
-        //  rawHeading = (360 - rawHeading) % 360;
-        //  this.log(`🔄 Android座標系補正: ${e.alpha.toFixed(1)}° → ${rawHeading.toFixed(1)}°`);
-        //}
+        if (this.isAndroid) {
+          rawHeading = (360 - rawHeading) % 360;
+          
+          // 初回のみログ出力（ログの氾濫を防ぐ）
+          if (!androidCorrectionLogged) {
+            this.log(`🔄 Android座標系補正適用: ${e.alpha.toFixed(1)}° → ${rawHeading.toFixed(1)}°`);
+            this.log(`   this.isAndroid = ${this.isAndroid}`);
+            androidCorrectionLogged = true;
+          }
+        }
         
         if (e.absolute === true) {
           // 絶対モード(磁北基準)
@@ -600,7 +629,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ OrientationManager v1.5.0 (Android座標系補正対応) 読み込み完了');
+  debugLog('✅ OrientationManager v1.5.1 (Android検出強化版) 読み込み完了');
 } else {
-  console.log('[OrientationManager] v1.5.0 - Android coordinate system fix applied');
+  console.log('[OrientationManager] v1.5.1 - Android detection enhanced with detailed logging');
 }
