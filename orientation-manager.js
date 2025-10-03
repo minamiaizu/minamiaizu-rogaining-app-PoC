@@ -271,7 +271,7 @@ class OrientationManager {
       // センサー初期化
       this.absoluteSensor = new AbsoluteOrientationSensor({
         frequency: 30,
-        referenceFrame: 'device'
+        referenceFrame: 'earth'
       });
       
       let errorOccurred = false;
