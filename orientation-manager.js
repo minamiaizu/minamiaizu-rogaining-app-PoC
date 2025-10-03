@@ -3,8 +3,8 @@
  * iOS/Android/Windows/Linux対応
  * AbsoluteOrientationSensor + DeviceOrientationEvent + キャリブレーション
  * 
- * 修正版: iOS権限リクエストを外部から制御可能に
- * バージョン: 1.2.0 - 2025-01-03
+ * 修正版: iPadOS 13+対応 - User-Agent検出を改善
+ * バージョン: 1.3.0 - 2025-01-03
  */
 
 class OrientationManager {
@@ -40,8 +40,8 @@ class OrientationManager {
     this.onUpdate = null;
     this.onModeChange = null;
     
-    // プラットフォーム情報
-    this.isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    // プラットフォーム情報（iPadOS 13+対応）
+    this.isIOS = this.detectIOS();
     this.isAndroid = /Android/.test(navigator.userAgent);
     
     // iOS権限状態
@@ -52,9 +52,38 @@ class OrientationManager {
     this.lastUpdateTime = 0;
   }
   
+  // ========== iOS/iPadOS検出（iPadOS 13+対応） ==========
+  detectIOS() {
+    const ua = navigator.userAgent;
+    
+    // 1. 従来のiOS検出（iPhone, iPod, iPad）
+    if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) {
+      this.log('✅ iOS検出: 従来のUA');
+      return true;
+    }
+    
+    // 2. iPadOS 13+検出
+    // Macintosh UAだが、タッチデバイス（maxTouchPoints > 1）
+    if (/Macintosh/.test(ua) && navigator.maxTouchPoints && navigator.maxTouchPoints > 1) {
+      this.log('✅ iPadOS 13+検出: Macintosh UA + タッチデバイス');
+      return true;
+    }
+    
+    // 3. DeviceOrientationEvent.requestPermissionの存在確認
+    // これはiOS 13+特有のAPI
+    if (typeof DeviceOrientationEvent !== 'undefined' && 
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      this.log('✅ iOS検出: requestPermission APIあり');
+      return true;
+    }
+    
+    return false;
+  }
+  
   // ========== 初期化 ==========
   async init() {
     this.log('🧭 OrientationManager初期化開始');
+    this.log(`📱 プラットフォーム: ${this.isIOS ? 'iOS/iPadOS' : this.isAndroid ? 'Android' : 'Other'}`);
     
     // 保存されたキャリブレーションを読み込み
     this.loadCalibration();
@@ -529,11 +558,15 @@ class OrientationManager {
         isCalibrated: this.isCalibrated,
         timestamp: localStorage.getItem('orientation_calibration_timestamp')
       },
-      platform: this.isIOS ? 'iOS' : (this.isAndroid ? 'Android' : 'Other'),
+      platform: this.isIOS ? 'iOS/iPadOS' : (this.isAndroid ? 'Android' : 'Other'),
+      userAgent: navigator.userAgent,
+      maxTouchPoints: navigator.maxTouchPoints,
       sensorAvailability: {
         ios: this.isIOS,
         absoluteSensor: 'AbsoluteOrientationSensor' in window,
-        deviceOrientation: 'DeviceOrientationEvent' in window
+        deviceOrientation: 'DeviceOrientationEvent' in window,
+        requestPermission: typeof DeviceOrientationEvent !== 'undefined' && 
+                          typeof DeviceOrientationEvent.requestPermission === 'function'
       },
       updates: this.updateCount,
       lastUpdate: this.lastUpdateTime ? new Date(this.lastUpdateTime).toISOString() : 'N/A'
@@ -557,7 +590,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ OrientationManager v1.2.0 (iOS権限対応版) 読み込み完了');
+  debugLog('✅ OrientationManager v1.3.0 (iPadOS対応版) 読み込み完了');
 } else {
-  console.log('[OrientationManager] v1.2.0 - iOS permission support loaded');
+  console.log('[OrientationManager] v1.3.0 - iPadOS support loaded');
 }
