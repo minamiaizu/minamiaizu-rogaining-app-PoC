@@ -352,10 +352,10 @@ class OrientationManager {
         let rawHeading = e.alpha;
         
         // 🔧 修正: Androidの座標系補正（absolute属性に関わらず適用）
-        if (this.isAndroid) {
-          rawHeading = (360 - rawHeading) % 360;
-          this.log(`🔄 Android座標系補正: ${e.alpha.toFixed(1)}° → ${rawHeading.toFixed(1)}°`);
-        }
+        //if (this.isAndroid) {
+        //  rawHeading = (360 - rawHeading) % 360;
+        //  this.log(`🔄 Android座標系補正: ${e.alpha.toFixed(1)}° → ${rawHeading.toFixed(1)}°`);
+        //}
         
         if (e.absolute === true) {
           // 絶対モード(磁北基準)
