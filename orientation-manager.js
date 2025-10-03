@@ -43,7 +43,8 @@ class OrientationManager {
     
     // プラットフォーム情報（iPadOS 13+対応）
     this.isIOS = this.detectIOS();
-    this.isAndroid = this.detectAndroid();
+    //this.isAndroid = this.detectAndroid();
+    this.isAndroid = /Android/.test(navigator.userAgent);
     
     // iOS権限状態
     this.iosPermissionGranted = false;
