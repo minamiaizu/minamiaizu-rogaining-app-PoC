@@ -261,7 +261,7 @@ class OrientationManager {
     ) * 180 / Math.PI;
     
     return {
-      yaw: (yaw + 360) % 360,
+      yaw: (yaw - 360) % 360,
       pitch: beta,   // DeviceOrientationEventのbetaに相当
       roll: gamma    // DeviceOrientationEventのgammaに相当
     };
