@@ -350,9 +350,9 @@ class OrientationManager {
     //if (/Android/.test(navigator.userAgent)) {
     //  yaw = (360 - yaw) % 360;
     //}
-    if (navigator.userAgent.indexOf('Android') !== -1) {
-      yaw = (360 - yaw) % 360;
-    }
+    //if (navigator.userAgent.indexOf('Android') !== -1) {
+    //  yaw = (360 - yaw) % 360;
+    //}
     
     // Beta (前後傾斜): -180°~180°
     const beta = Math.atan2(
