@@ -87,8 +87,8 @@ class OrientationManager {
     
     // 1. 基本的なAndroid検出
     if (/Android/.test(ua)) {
-      this.log('✅ Android検出: UserAgentにAndroidを確認');
-      this.log(`📱 UserAgent: ${ua.substring(0, 80)}...`);
+      //this.log('✅ Android検出: UserAgentにAndroidを確認');
+      //this.log(`📱 UserAgent: ${ua.substring(0, 80)}...`);
       return true;
     }
     
