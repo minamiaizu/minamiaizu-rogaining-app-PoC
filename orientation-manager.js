@@ -2,6 +2,9 @@
  * OrientationManager - マルチプラットフォーム対応版
  * iOS/Android/Windows/Linux対応
  * AbsoluteOrientationSensor + DeviceOrientationEvent + キャリブレーション
+ * 
+ * 修正版: quaternionToEulerの座標系をDeviceOrientationEventのbeta/gammaと統一
+ * バージョン: 1.1.0 - 2025-01-03
  */
 
 class OrientationManager {
@@ -227,32 +230,40 @@ class OrientationManager {
     }
   }
   
-  // ========== Quaternionから角度計算 ==========
+  // ========== Quaternionから角度計算（修正版） ==========
   quaternionToEuler(q) {
     const [x, y, z, w] = q;
     
     // Yaw (方位角) - Z軸周りの回転
+    // この計算式は変更なし（方位計測に影響しない）
     const yaw = Math.atan2(
       2.0 * (w * z + x * y),
       1.0 - 2.0 * (y * y + z * z)
     ) * 180 / Math.PI;
     
-    // Pitch (前後傾斜) - X軸周りの回転
-    const sinPitch = 2.0 * (w * y - z * x);
-    const pitch = Math.asin(
-      Math.max(-1, Math.min(1, sinPitch))
-    ) * 180 / Math.PI;
+    // ========== 修正箇所：DeviceOrientationEventのbeta/gammaと座標系を統一 ==========
+    // 参考: https://www.w3.org/TR/orientation-event/
     
-    // Roll (左右傾斜) - Y軸周りの回転
-    const roll = Math.atan2(
+    // Beta (前後傾斜): -180°～180°
+    // デバイスを前に傾ける（画面が自分に向かう）→ 正の値
+    // DeviceOrientationEventのbeta値と同じ座標系
+    const beta = Math.atan2(
       2.0 * (w * x + y * z),
       1.0 - 2.0 * (x * x + y * y)
     ) * 180 / Math.PI;
     
+    // Gamma (左右傾斜): -90°～90°
+    // デバイスを右に傾ける → 正の値
+    // DeviceOrientationEventのgamma値と同じ座標系
+    const sinGamma = 2.0 * (w * y - z * x);
+    const gamma = Math.asin(
+      Math.max(-1, Math.min(1, sinGamma))
+    ) * 180 / Math.PI;
+    
     return {
       yaw: (yaw + 360) % 360,
-      pitch: pitch,
-      roll: roll
+      pitch: beta,   // DeviceOrientationEventのbetaに相当
+      roll: gamma    // DeviceOrientationEventのgammaに相当
     };
   }
   
@@ -503,7 +514,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ OrientationManager (Enhanced Multi-Platform) 読み込み完了');
+  debugLog('✅ OrientationManager v1.1.0 (修正版: quaternionToEuler座標系統一) 読み込み完了');
 } else {
-  console.log('[OrientationManager] Enhanced Multi-Platform version loaded');
+  console.log('[OrientationManager] v1.1.0 - Fixed quaternionToEuler coordinate system loaded');
 }
