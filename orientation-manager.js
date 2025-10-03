@@ -358,7 +358,8 @@ class OrientationManager {
     ) * 180 / Math.PI;
     
     // Android補正
-    if (this.isAndroid) {
+    //if (this.isAndroid) {
+    if (/Android/.test(navigator.userAgent)) {
       yaw = (360 - yaw) % 360;
     }
     
