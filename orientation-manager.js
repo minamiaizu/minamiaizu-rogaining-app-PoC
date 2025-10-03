@@ -384,7 +384,7 @@ class OrientationManager {
     ) * 180 / Math.PI;
     
     // 🔧 Android座標系補正: 東西反転
-    yaw = (360 - yaw) % 360;
+    yaw = (270 - yaw) % 360;
     
     // Beta (前後傾斜): -180°~180°
     const beta = Math.atan2(
