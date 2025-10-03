@@ -383,29 +383,6 @@ class OrientationManager {
       1.0 - 2.0 * (y * y + z * z)
     ) * 180 / Math.PI;
     
-    // 🔧 Android座標系補正: 東西反転
-    //yaw = (270 - yaw) % 360;
-    
-    // Beta (前後傾斜): -180°~180°
-    const beta = Math.atan2(
-      2.0 * (w * x + y * z),
-      1.0 - 2.0 * (x * x + y * y)
-    ) * 180 / Math.PI;
-    
-    // Gamma (左右傾斜): -90°~90°
-    const sinGamma = 2.0 * (w * y - z * x);
-    const gamma = Math.asin(
-      Math.max(-1, Math.min(1, sinGamma))
-    ) * 180 / Math.PI;
-    
-    // デバッグ: 生のQuaternion値をログ出力
-    console.log('[Quaternion]', {
-      x: x.toFixed(3),
-      y: y.toFixed(3),
-      z: z.toFixed(3),
-      w: w.toFixed(3)
-    });
-    
     // パターン1: マイナス符号あり（現在のコード）
     let yaw1 = Math.atan2(
       -2.0 * (w * z + x * y),
@@ -426,13 +403,29 @@ class OrientationManager {
     // パターン4: 270度回転＋反転
     let yaw4 = (270 - yaw1 + 360) % 360;
     
-    // デバッグ: すべてのパターンをログ出力
-    console.log('[Yaw Patterns]', {
-      pattern1_minus: Math.round(yaw1) + '°',
-      pattern2_plus: Math.round(yaw2) + '°',
-      pattern3_inverse: Math.round(yaw3) + '°',
-      pattern4_270inv: Math.round(yaw4) + '°'
-    });
+    // 🔧 1秒に1回だけログ出力
+    const now = Date.now();
+    if (!this._lastDebugLog || now - this._lastDebugLog > 1000) {
+      this._lastDebugLog = now;
+      
+      this.log(`📊 Quaternion: x=${x.toFixed(3)}, y=${y.toFixed(3)}, z=${z.toFixed(3)}, w=${w.toFixed(3)}`);
+      this.log(`🧭 P1(-): ${Math.round(yaw1)}° | P2(+): ${Math.round(yaw2)}° | P3(inv): ${Math.round(yaw3)}° | P4(270): ${Math.round(yaw4)}°`);
+    }
+    
+    // 🔧 Android座標系補正: 東西反転
+    //yaw = (270 - yaw) % 360;
+    
+    // Beta (前後傾斜): -180°~180°
+    const beta = Math.atan2(
+      2.0 * (w * x + y * z),
+      1.0 - 2.0 * (x * x + y * y)
+    ) * 180 / Math.PI;
+    
+    // Gamma (左右傾斜): -90°~90°
+    const sinGamma = 2.0 * (w * y - z * x);
+    const gamma = Math.asin(
+      Math.max(-1, Math.min(1, sinGamma))
+    ) * 180 / Math.PI;
     
     return {
       yaw: (yaw + 360) % 360,
