@@ -356,6 +356,11 @@ class OrientationManager {
       Math.max(-1, Math.min(1, sinGamma))
     ) * 180 / Math.PI;
     
+    // Android補正
+    if (this.isAndroid) {
+      yaw = (360 - yaw) % 360;
+    }
+    
     return {
       yaw: (yaw + 360) % 360,
       pitch: beta,
