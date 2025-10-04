@@ -4,7 +4,7 @@
  * AbsoluteOrientationSensor + DeviceOrientationEvent + キャリブレーション
  * 
  * 修正版: 座標系統一 - iOS/Android両対応
- * バージョン: 1.5.1 - 2025-01-03
+ * バージョン: 1.5.1 - 2025-10-03
  * 変更点: Android検出を強化、詳細なデバッグログを追加
  */
 
