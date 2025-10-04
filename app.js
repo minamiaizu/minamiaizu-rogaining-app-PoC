@@ -13,6 +13,10 @@
  * 改修: オフライン時の地図操作改善
  * 改修日: 2025-10-04
  * バージョン: 2.1.0
+ * 
+ * 改修: オフライン時間カウンター追加、オーバーレイ完全透過化
+ * 改修日: 2025-10-04
+ * バージョン: 2.2.0
  */
 
 /* ======== Service Worker ======== */
@@ -58,6 +62,10 @@ let batterySaverMode = false;
 
 // オフラインオーバーレイ要素
 let offlineOverlay = null;
+
+// 🆕 オフライン時間カウンター
+let offlineTimer = null;
+let offlineStartTime = null;
 
 /* ======== マネージャーインスタンス ======== */
 let stateMgr, geoMgr, compassView, sonarView, arView, orientationMgr;
@@ -840,6 +848,41 @@ function restoreBatterySaverMode() {
   }
 }
 
+/* ======== 🆕 オフライン時間カウンター ======== */
+/**
+ * オフライン時間のカウントを開始
+ */
+function startOfflineTimer() {
+  if (offlineTimer) return;
+  
+  offlineTimer = setInterval(() => {
+    if (!offlineStartTime) return;
+    
+    const elapsed = Math.floor((Date.now() - offlineStartTime) / 1000);
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
+    
+    const durationEl = document.getElementById('offline-duration');
+    if (durationEl) {
+      durationEl.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
+    }
+  }, 1000);
+  
+  debugLog('⏱️ オフライン時間カウント開始');
+}
+
+/**
+ * オフライン時間のカウントを停止
+ */
+function stopOfflineTimer() {
+  if (offlineTimer) {
+    clearInterval(offlineTimer);
+    offlineTimer = null;
+    offlineStartTime = null;
+    debugLog('⏱️ オフライン時間カウント停止');
+  }
+}
+
 /* ======== オンライン/オフライン（改善版） ======== */
 function updateOnlineStatus() {
   const mapDiv = document.getElementById('map');
@@ -884,24 +927,23 @@ function updateOnlineStatus() {
 }
 
 /**
- * オフラインオーバーレイを表示
+ * オフラインオーバーレイを表示（改善版 - 完全透過 + 下端配置 + 時間カウンター）
  */
 function showOfflineOverlay() {
-  // 既に存在する場合は何もしない
+  // 既に表示中の場合は何もしない
   if (offlineOverlay && offlineOverlay.parentElement) {
     return;
   }
   
-  // オーバーレイ要素を作成
+  // オフライン開始時刻を記録
+  offlineStartTime = Date.now();
+  
+  // オーバーレイ要素を作成（完全透過）
   offlineOverlay = document.createElement('div');
   offlineOverlay.className = 'offline-map-overlay';
   offlineOverlay.innerHTML = `
-    <div class="offline-badge">
-      📡 オフラインモード
-    </div>
-    <div class="offline-message">
-      地図タイルは表示されませんが、<br>
-      GPS・マーカー・軌跡は利用可能です
+    <div class="offline-banner">
+      📡 オフライン <span id="offline-duration">0:00</span>
     </div>
   `;
   
@@ -909,16 +951,26 @@ function showOfflineOverlay() {
   if (mapDiv) {
     mapDiv.appendChild(offlineOverlay);
   }
+  
+  // 時間カウント開始
+  startOfflineTimer();
+  
+  debugLog('📡 オフラインオーバーレイ表示（完全透過版）');
 }
 
 /**
- * オフラインオーバーレイを削除
+ * オフラインオーバーレイを削除（改善版 - タイマー停止処理追加）
  */
 function hideOfflineOverlay() {
+  // タイマーを停止
+  stopOfflineTimer();
+  
   if (offlineOverlay && offlineOverlay.parentElement) {
     offlineOverlay.parentElement.removeChild(offlineOverlay);
     offlineOverlay = null;
   }
+  
+  debugLog('✅ オフラインオーバーレイ解除');
 }
 
 window.addEventListener('online', () => { 
