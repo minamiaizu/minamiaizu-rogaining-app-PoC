@@ -17,9 +17,11 @@
     "attribution": "&copy; OpenStreetMap"
   },
   "tracking": {
-    "intervalSeconds": 60,
-    "highAccuracy": true,
-    "timeout": 10000
+    "intervalSeconds": 30,
+    "minDistanceMeters": 10,
+    "highAccuracy": false,
+    "timeout": 10000,
+    "maximumAge": 30000
   },
   "photo": {
     "maxWidth": 1280,
@@ -44,7 +46,7 @@
   },
   "sonar": {
     "defaultRange": 1000,
-    "scanSpeed": 72,
+    "scanSpeed": 36,
     "audioEnabled": false
   }
 }
