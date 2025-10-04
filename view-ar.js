@@ -986,7 +986,7 @@ class ARView {
     
     // デバッグボタン
     const debugBtn = document.createElement('button');
-    debugBtn.textContent = '🛠';
+    debugBtn.textContent = '🐛';
     debugBtn.title = 'デバッグ情報を表示/非表示';
     debugBtn.style.cssText = `
       background: rgba(0, 0, 0, 0.7);
