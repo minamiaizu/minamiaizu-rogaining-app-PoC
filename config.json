@@ -1,0 +1,51 @@
+{
+  "version": "1.0",
+  "app": {
+    "title": "ロゲイニング PoC",
+    "defaultTimeLimitMinutes": 120,
+    "checkpointThresholdMeters": 100,
+    "nearbyThresholdMeters": 150
+  },
+  "map": {
+    "defaultCenter": {
+      "lat": 37.20329853,
+      "lng": 139.77424063
+    },
+    "defaultZoom": 14,
+    "maxZoom": 19,
+    "tileUrl": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "attribution": "&copy; OpenStreetMap"
+  },
+  "tracking": {
+    "intervalSeconds": 30,
+    "highAccuracy": false,
+    "timeout": 10000,
+    "maximumAge": 30000
+  },
+  "photo": {
+    "maxWidth": 1280,
+    "quality": 0.6,
+    "captureMode": "environment"
+  },
+  "orientation": {
+    "smoothingFactorCompass": 0.15,
+    "smoothingFactorAR": 0.35,
+    "updateFrequencyHz": 30
+  },
+  "ar": {
+    "timeLimitSeconds": 300,
+    "fovPresets": {
+      "wide": { "h": 70, "v": 52, "label": "広角" },
+      "normal": { "h": 60, "v": 45, "label": "標準" },
+      "tele": { "h": 45, "v": 34, "label": "望遠" }
+    },
+    "defaultFov": "normal",
+    "defaultRange": 1000,
+    "debugMode": false
+  },
+  "sonar": {
+    "defaultRange": 1000,
+    "scanSpeed": 36,
+    "audioEnabled": false
+  }
+}

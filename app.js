@@ -5,6 +5,10 @@
  * 
  * 改修: AR最寄りCP情報セクションの表示制御を追加
  * 改修日: 2025-10-04
+ * 
+ * 改修: バッテリー最適化 - タブ切り替え改善、省電力モード追加
+ * 改修日: 2025-10-04
+ * バージョン: 2.0.0
  */
 
 /* ======== Service Worker ======== */
@@ -44,6 +48,9 @@ let currentView = 'map';
 let timerInterval = null;
 let isOnline = navigator.onLine;
 let arCapable = false;
+
+// 🔋 省電力モード状態
+let batterySaverMode = false;
 
 /* ======== マネージャーインスタンス ======== */
 let stateMgr, geoMgr, compassView, sonarView, arView, orientationMgr;
@@ -102,6 +109,7 @@ async function init() {
   const sonarConfig = stateMgr.config?.sonar || {};
   sonarView = new SonarView({
     range: sonarConfig.defaultRange || 1000,
+    scanSpeed: sonarConfig.scanSpeed || 36,  // 🔋 36に変更
     audioEnabled: sonarConfig.audioEnabled || false,
     stateMgr: stateMgr,
     geoMgr: geoMgr,
@@ -139,19 +147,17 @@ async function init() {
   // 9. キャリブレーションUIチェック
   checkCalibrationUI();
   
-  // ========== 自動起動処理(追加) ==========
-  // 現在地を自動取得
-  //getCurrentLocation().catch(err => {
-  //  debugLog(`⚠️ 自動位置取得失敗: ${err.message}`);
-  //});
+  // 10. 🔋 省電力モード復元
+  restoreBatterySaverMode();
   
+  // ========== 自動起動処理 ==========
   // 軌跡記録を自動開始
   startTracking();
   
   debugLog('🎉 アプリケーション初期化完了');
 }
 
-/* ======== iOS権限プロンプト表示 ======== */
+/* ======== iOSPermissionPrompt表示 ======== */
 function showIOSPermissionPrompt() {
   const prompt = document.getElementById('ios-permission-prompt');
   if (prompt) {
@@ -366,6 +372,9 @@ function setupEventListeners() {
     });
   });
   
+  // 🔋 省電力モードトグル
+  document.getElementById('battery-saver-mode')?.addEventListener('change', handleBatterySaverModeChange);
+  
   window.addEventListener('resize', () => {
     if (compassView) compassView.updateSize();
     if (currentView === 'ar' && arView) arView._resizeCanvas();
@@ -477,6 +486,14 @@ function toggleTracking() {
 function startTracking() {
   stateMgr.setTrackingEnabled(true);
   
+  // 🔋 省電力モードに応じた設定を取得
+  const trackingConfig = stateMgr.config?.tracking || {};
+  const options = {
+    enableHighAccuracy: batterySaverMode ? false : (trackingConfig.highAccuracy ?? false),
+    timeout: trackingConfig.timeout ?? 10000,
+    maximumAge: trackingConfig.maximumAge ?? 30000
+  };
+  
   geoMgr.startWatchPosition((position) => {
     stateMgr.setPosition(position);
     stateMgr.addTrackPoint(position);
@@ -489,14 +506,10 @@ function startTracking() {
     if (stateMgr.trackPoints.length % 5 === 0) {
       stateMgr.save();
     }
-  }, {
-    enableHighAccuracy: false,
-    timeout: 10000,
-    maximumAge: 0
-  });
+  }, options);
   
   updateTrackingButton();
-  debugLog('軌跡記録を開始');
+  debugLog(`📍 軌跡記録を開始 (省電力: ${batterySaverMode ? 'ON' : 'OFF'})`);
 }
 
 function stopTracking() {
@@ -504,7 +517,7 @@ function stopTracking() {
   geoMgr.stopWatchPosition();
   updateTrackingButton();
   stateMgr.save();
-  debugLog('軌跡記録を停止');
+  debugLog('📍 軌跡記録を停止');
 }
 
 function updateTrackingButton() {
@@ -600,7 +613,7 @@ function renderCheckpoints() {
     
     div.innerHTML = `
       <div>
-        <div class="checkpoint-name">${stateMgr.isCompleted(cp.id) ? '✓ ' : ''}${cp.name}</div>
+        <div class="checkpoint-name">${stateMgr.isCompleted(cp.id) ? '✔ ' : ''}${cp.name}</div>
         ${currentPosition ? `<div style="font-size:12px;color:#718096;margin-top:4px;">${distText}${trackingWarning}</div>` : ''}
       </div>
       <div class="checkpoint-points">${cp.points}点</div>
@@ -648,7 +661,7 @@ function openPhotoModal(src) {
   modal.hidden = false;
 }
 
-/* ======== ビュー切替 ======== */
+/* ======== ビュー切替（改善版） ======== */
 function switchView(view) {
   // iOS権限チェック
   if ((view === 'compass' || view === 'sonar' || view === 'ar') && orientationMgr.needsIOSPermission()) {
@@ -671,36 +684,152 @@ function switchView(view) {
     if (!proceed) return;
   }
   
+  // ========== 🔧 修正: まず全ビューを停止 ==========
+  debugLog(`🔄 ビュー切り替え: ${currentView} → ${view}`);
+  
+  // Compass停止
+  if (compassView) {
+    compassView.hide();
+  }
+  
+  // Sonar停止（音も確実に停止）
+  if (sonarView) {
+    sonarView.hide();
+  }
+  
+  // AR停止（カメラも確実に停止）
+  if (arView) {
+    arView.stop();
+  }
+  
+  // ========== ビュー切り替え実行 ==========
   currentView = view;
   
+  // DOM表示制御
   document.getElementById('map').hidden = view !== 'map';
   document.getElementById('compass-view').hidden = view !== 'compass';
   document.getElementById('sonar-view').hidden = view !== 'sonar';
   document.getElementById('ar-view').hidden = view !== 'ar';
   
-  // AR最寄りCP情報セクションの表示制御(新規)
+  // AR最寄りCP情報セクションの表示制御
   const arNearestInfo = document.getElementById('ar-nearest-info');
   if (arNearestInfo) {
     arNearestInfo.hidden = view !== 'ar';
   }
   
+  // タブハイライト
   document.querySelectorAll('#tabs .tab').forEach(tab => {
     tab.classList.toggle('active', tab.dataset.view === view);
   });
   
+  // ========== 選択されたビューのみ開始 ==========
   if (view === 'compass') {
     orientationMgr?.setMode('compass');
     compassView.show();
+    debugLog('✅ Compassビュー開始');
   } else if (view === 'sonar') {
+    orientationMgr?.setMode('sonar');
     sonarView.show();
     sonarView.startAnimation();
+    debugLog('✅ Sonarビュー開始');
   } else if (view === 'ar') {
     orientationMgr?.setMode('ar');
-    if (arView) arView.start();
+    if (arView) {
+      arView.start().catch(err => {
+        debugLog(`❌ AR起動失敗: ${err.message}`);
+        alert('ARカメラの起動に失敗しました。\nカメラの使用許可を確認してください。');
+        // フォールバック: Compassに戻る
+        switchView('compass');
+      });
+    }
+    debugLog('✅ ARビュー開始');
+  } else if (view === 'map') {
+    debugLog('✅ Mapビュー表示');
+  }
+}
+
+/* ======== 🔋 省電力モード ======== */
+function handleBatterySaverModeChange(e) {
+  batterySaverMode = e.target.checked;
+  
+  if (batterySaverMode) {
+    debugLog('🔋 省電力モード: ON');
+    
+    // GPS精度を下げる（トラッキング再起動）
+    if (stateMgr.isTrackingEnabled()) {
+      stopTracking();
+      setTimeout(() => {
+        startTracking(); // 低精度モードで再起動
+      }, 500);
+    }
+    
+    // センサー頻度を下げる
+    if (orientationMgr && orientationMgr.setBatterySaverMode) {
+      orientationMgr.setBatterySaverMode(true);
+    }
+    
+    // AR FPS制限を強化
+    if (arView && arView.setBatterySaverMode) {
+      arView.setBatterySaverMode(true);
+    }
+    
+    // ユーザーに通知
+    showNotification({
+      type: 'success',
+      message: '🔋 省電力モードON: GPS精度↓、センサー頻度↓、AR FPS↓',
+      duration: 4000
+    });
+    
+    // 画面輝度の提案
+    setTimeout(() => {
+      showNotification({
+        type: 'info',
+        message: '💡 画面の明るさを手動で下げると、さらに省電力になります',
+        duration: 5000
+      });
+    }, 1000);
+    
   } else {
-    compassView?.hide();
-    sonarView.hide();
-    if (arView) arView.stop();
+    debugLog('🔋 省電力モード: OFF');
+    
+    // 通常モードに戻す
+    if (stateMgr.isTrackingEnabled()) {
+      stopTracking();
+      setTimeout(() => startTracking(), 500);
+    }
+    
+    if (orientationMgr && orientationMgr.setBatterySaverMode) {
+      orientationMgr.setBatterySaverMode(false);
+    }
+    
+    if (arView && arView.setBatterySaverMode) {
+      arView.setBatterySaverMode(false);
+    }
+    
+    showNotification({
+      type: 'info',
+      message: 'ℹ️ 省電力モードOFF: 通常動作に戻りました',
+      duration: 3000
+    });
+  }
+  
+  // LocalStorageに保存
+  localStorage.setItem('battery_saver_mode', batterySaverMode ? 'true' : 'false');
+}
+
+function restoreBatterySaverMode() {
+  const saved = localStorage.getItem('battery_saver_mode') === 'true';
+  const checkbox = document.getElementById('battery-saver-mode');
+  
+  if (checkbox) {
+    checkbox.checked = saved;
+    
+    if (saved) {
+      batterySaverMode = true;
+      // 設定を適用（UIイベントをトリガー）
+      checkbox.dispatchEvent(new Event('change'));
+      debugLog('🔋 省電力モード復元: ON');
+    }
   }
 }
 

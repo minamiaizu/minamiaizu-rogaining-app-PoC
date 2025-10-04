@@ -1,13 +1,17 @@
 /**
  * SonarView - ソナー表示管理（リファクタリング版）
  * 依存性注入パターンを使用し、グローバル変数への依存を排除
+ * 
+ * 🔋 改修: バッテリー最適化 - スキャン速度削減、音響制御強化
+ * 改修日: 2025-10-04
+ * バージョン: 1.1.0
  */
 
 class SonarView {
   constructor(options = {}) {
     this.options = {
       range: options.range ?? 1000,
-      scanSpeed: options.scanSpeed ?? 72,
+      scanSpeed: options.scanSpeed ?? 36,  // 🔋 72 → 36 (バッテリー最適化)
       audioEnabled: options.audioEnabled ?? false
     };
     
@@ -37,6 +41,9 @@ class SonarView {
     // キャッシュ
     this.distanceCache = {};
     this.lastCacheTime = 0;
+    
+    // 🔋 音響一時無効化フラグ（停止時用）
+    this._tempAudioDisabled = false;
     
     if (!this.stateMgr || !this.geoMgr || !this.orientationMgr) {
       this.log('⚠️ StateManager/GeoManager/OrientationManagerが注入されていません');
@@ -110,6 +117,7 @@ class SonarView {
     
     this.lastUpdateTime = 0;
     this.scanAngle = 0;
+    this._tempAudioDisabled = false;  // 🔋 音響を再有効化
     this.animationId = requestAnimationFrame((t) => this.loop(t));
     this.log('🎬 ソナーアニメーション開始');
   }
@@ -118,6 +126,7 @@ class SonarView {
     if (this.animationId) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
+      this._tempAudioDisabled = true;  // 🔋 音響を一時無効化
     }
   }
   
@@ -751,7 +760,8 @@ class SonarView {
   }
   
   playDetectionBeep(distance) {
-    if (!this.audioContext || !this.options.audioEnabled) return;
+    // 🔋 一時無効化チェック追加
+    if (!this.audioContext || !this.options.audioEnabled || this._tempAudioDisabled) return;
     
     const ctx = this.audioContext;
     const oscillator = ctx.createOscillator();
@@ -772,7 +782,8 @@ class SonarView {
   }
   
   playScanSound() {
-    if (!this.audioContext || !this.options.audioEnabled) return;
+    // 🔋 一時無効化チェック追加
+    if (!this.audioContext || !this.options.audioEnabled || this._tempAudioDisabled) return;
     
     const ctx = this.audioContext;
     const oscillator = ctx.createOscillator();
@@ -790,7 +801,9 @@ class SonarView {
   }
   
   checkScanSound() {
-    if (Math.floor(this.scanAngle / 360) > Math.floor(this.lastScanSoundAngle / 360)) {
+    // 🔋 頻度制限強化: 360度回転ごとに1回のみ、かつ音響が有効な場合のみ
+    if (this.options.audioEnabled && !this._tempAudioDisabled && 
+        Math.floor(this.scanAngle / 360) > Math.floor(this.lastScanSoundAngle / 360)) {
       this.playScanSound();
     }
     this.lastScanSoundAngle = this.scanAngle;
@@ -860,7 +873,7 @@ if (typeof window !== 'undefined') {
 }
 
 if (typeof debugLog === 'function') {
-  debugLog('✅ SonarView (Fixed: CP rotation issue) 読み込み完了');
+  debugLog('✅ SonarView v1.1.0 (🔋 バッテリー最適化版) 読み込み完了');
 } else {
-  console.log('[SonarView] Fixed version with correct CP rotation loaded');
+  console.log('[SonarView] v1.1.0 - Battery optimization: Scan speed reduced, Audio control enhanced');
 }

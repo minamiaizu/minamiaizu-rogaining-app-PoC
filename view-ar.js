@@ -20,6 +20,10 @@
  * 改修: デバッグボタン表示ON/OFF機能追加
  * 改修日: 2025-10-04
  * バージョン: 1.4.0
+ * 
+ * 🔋 改修: バッテリー最適化 - FPS削減、Visibility API対応、省電力モード
+ * 改修日: 2025-10-04
+ * バージョン: 1.5.0
  */
 
 class ARView {
@@ -62,9 +66,17 @@ class ARView {
     this.timerInterval = null;
     this.secondsLeft = this.options.timerDuration;
     
-    // FPS制限
+    // 🔋 FPS制限（30fps → 15fps）
     this.lastFrameTime = 0;
-    this.fpsLimit = 30;
+    this.fpsLimit = 15;  // 🔧 30 → 15
+    
+    // 🔋 Visibility API対応
+    this.isVisible = true;
+    
+    // 🔋 省電力モード
+    this.batterySaverMode = false;
+    this.normalFpsLimit = 15;
+    this.batterySaverFpsLimit = 10;
     
     // キャッシュ
     this.distanceCache = {};
@@ -368,6 +380,9 @@ class ARView {
     // マーカー調整ボタンのイベント設定
     this._setupMarkerAdjustButtons();
     
+    // 🔋 Visibility API対応
+    this._setupVisibilityListener();
+    
     // カメラ制約(プラットフォーム別・iPad対応強化)
     const constraints = this._getCameraConstraints();
     
@@ -383,7 +398,7 @@ class ARView {
       this.startTimer();
       this._startRenderLoop();
       
-      this.log('✅ ARカメラ起動成功(背面カメラ優先)');
+      this.log(`✅ ARカメラ起動成功 (FPS: ${this.fpsLimit}, 省電力: ${this.batterySaverMode ? 'ON' : 'OFF'})`);
     } catch (error) {
       this.log(`⚠️ ARカメラ起動失敗(1回目): ${error.message}`);
       
@@ -479,6 +494,19 @@ class ARView {
     }
   }
   
+  // ========== 🔋 Visibility API対応 ==========
+  _setupVisibilityListener() {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this.isVisible = false;
+        this.log('📵 ARビューが非表示に（描画一時停止）');
+      } else {
+        this.isVisible = true;
+        this.log('📱 ARビューが表示に（描画再開）');
+      }
+    });
+  }
+  
   // ========== 停止 ==========
   stop() {
     if (this.stream) {
@@ -534,6 +562,12 @@ class ARView {
   
   _renderLoop(currentTime) {
     if (!this.animationId) return;
+    
+    // 🔋 非表示時は描画をスキップ
+    if (!this.isVisible) {
+      this.animationId = requestAnimationFrame((t) => this._renderLoop(t));
+      return;
+    }
     
     // FPS制限
     if (currentTime - this.lastFrameTime < 1000 / this.fpsLimit) {
@@ -765,10 +799,10 @@ class ARView {
   
   _drawDebugInfo(ctx, w, h) {
     ctx.fillStyle = 'rgba(0,0,0,0.85)';
-    ctx.fillRect(10, 10, 320, 300);
+    ctx.fillRect(10, 10, 320, 340);
     ctx.strokeStyle = '#00ff00';
     ctx.lineWidth = 2;
-    ctx.strokeRect(10, 10, 320, 300);
+    ctx.strokeRect(10, 10, 320, 340);
     
     ctx.fillStyle = '#00ff00';
     ctx.font = 'bold 12px monospace';
@@ -788,6 +822,12 @@ class ARView {
     // 画面の向き
     const orientation = this._getScreenOrientation();
     ctx.fillText(`📐 Orientation: ${orientation}`, 15, y); y += lineHeight;
+    
+    // 🔋 バッテリー最適化情報
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText(`🔋 FPS: ${this.fpsLimit} (省電力: ${this.batterySaverMode ? 'ON' : 'OFF'})`, 15, y); y += lineHeight;
+    ctx.fillText(`👁️ Visible: ${this.isVisible ? 'YES' : 'NO'}`, 15, y); y += lineHeight;
+    ctx.fillStyle = '#00ff00';
     y += 5;
     
     // OrientationManager情報
@@ -837,7 +877,6 @@ class ARView {
     // AR設定
     ctx.fillText(`Range: ${this.options.range}m`, 15, y); y += lineHeight;
     ctx.fillText(`FOV: ${Math.round(this.options.fovH*180/Math.PI)}°`, 15, y); y += lineHeight;
-    ctx.fillText(`FPS: ${this.fpsLimit}`, 15, y); y += lineHeight;
   }
   
   // ========== 更新 ==========
@@ -1036,6 +1075,19 @@ class ARView {
     const m = String(Math.floor(seconds/60)).padStart(2,'0');
     const s = String(seconds%60).padStart(2,'0');
     return `${m}:${s}`;
+  }
+  
+  // ========== 🔋 省電力モード（新規） ==========
+  setBatterySaverMode(enabled) {
+    this.batterySaverMode = enabled;
+    
+    if (enabled) {
+      this.fpsLimit = this.batterySaverFpsLimit;
+      this.log(`🔋 AR省電力モードON: ${this.fpsLimit}fps`);
+    } else {
+      this.fpsLimit = this.normalFpsLimit;
+      this.log(`🔋 AR省電力モードOFF: ${this.fpsLimit}fps`);
+    }
   }
   
   // ========== 設定 ==========
@@ -1256,11 +1308,17 @@ class ARView {
     // 8. レンダリング
     report.push('【レンダリング】');
     report.push(`アニメID: ${this.animationId ? '✅ 動作中' : '❌ 停止'}`);
-    report.push(`FPS制限: ${this.fpsLimit}`);
     report.push(`Canvas: ${this.canvas?.width}x${this.canvas?.height}`);
     report.push('');
     
-    // 9. 設定
+    // 9. 🔋 バッテリー最適化状態
+    report.push('【🔋 バッテリー最適化】');
+    report.push(`FPS制限: ${this.fpsLimit}`);
+    report.push(`省電力モード: ${this.batterySaverMode ? 'ON' : 'OFF'}`);
+    report.push(`Visibility: ${this.isVisible ? '表示中' : '非表示'}`);
+    report.push('');
+    
+    // 10. 設定
     report.push('【設定】');
     report.push(`レンジ: ${this.options.range}m`);
     report.push(`FOV: ${Math.round(this.options.fovH*180/Math.PI)}° × ${Math.round(this.options.fovV*180/Math.PI)}°`);
@@ -1339,7 +1397,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ ARView v1.4.0 (デバッグボタン表示ON/OFF機能追加) 読み込み完了');
+  debugLog('✅ ARView v1.5.0 (🔋 バッテリー最適化版) 読み込み完了');
 } else {
-  console.log('[ARView] v1.4.0 - Debug buttons visibility toggle feature added');
+  console.log('[ARView] v1.5.0 - Battery optimization: FPS reduced, Visibility API, Battery saver mode');
 }

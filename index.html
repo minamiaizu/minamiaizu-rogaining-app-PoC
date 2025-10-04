@@ -32,7 +32,7 @@
     </div>
   </div>
 
-  <!-- iOS Permission Request UI (新規) -->
+  <!-- iOS Permission Request UI -->
   <div id="ios-permission-prompt" class="calibration-ui" hidden>
     <div class="calibration-content">
       <h3>📱 センサーへのアクセス許可</h3>
@@ -49,7 +49,7 @@
     </div>
   </div>
 
-  <!-- Calibration UI (新規) -->
+  <!-- Calibration UI -->
   <div id="calibration-prompt" class="calibration-ui" hidden>
     <div class="calibration-content">
       <h3>🧭 方位の設定</h3>
@@ -234,12 +234,12 @@
       </div>
     </section>
 
-    <!-- AR最寄りCP情報セクション (新規) -->
+    <!-- AR最寄りCP情報セクション -->
     <section id="ar-nearest-info" class="card" hidden>
       <div class="info-name">最寄りのターゲット</div>
       <div class="info-details">位置情報を取得中...</div>
       
-      <!-- ARデバッグボタン表示切替 (新規追加) -->
+      <!-- ARデバッグボタン表示切替 -->
       <div class="ar-debug-toggle">
         <label>
           <input type="checkbox" id="ar-debug-enable">
@@ -256,6 +256,17 @@
       <button class="button button-success" id="check-button" type="button" disabled>✓ チェックポイント確認</button>
       <button class="button track" id="tracking-button" type="button">▶️ 軌跡記録を開始</button>
       <button class="button danger" id="clear-button" type="button">🗑️ データをリセット</button>
+      
+      <!-- 🔋 省電力モード -->
+      <div class="battery-saver-toggle" style="margin-top:15px;padding:15px;background:#f7fafc;border-radius:10px;border:2px solid #cbd5e0;">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;">
+          <input type="checkbox" id="battery-saver-mode" style="width:20px;height:20px;cursor:pointer;">
+          <div>
+            <div style="font-weight:700;font-size:16px;color:#2d3748;">🔋 省電力モード</div>
+            <div style="font-size:13px;color:#718096;margin-top:4px;">GPS精度↓、センサー頻度↓、AR FPS↓</div>
+          </div>
+        </label>
+      </div>
     </section>
 
     <!-- Info -->

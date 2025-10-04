@@ -6,6 +6,10 @@
  * 修正版: 座標系統一 - iOS/Android両対応
  * バージョン: 1.5.1 - 2025-10-03
  * 変更点: Android検出を強化、詳細なデバッグログを追加
+ * 
+ * 改修: バッテリー最適化 - センサー頻度動的調整
+ * 改修日: 2025-10-04
+ * バージョン: 1.6.0
  */
 
 class OrientationManager {
@@ -37,13 +41,21 @@ class OrientationManager {
     };
     this.currentViewMode = 'compass';
     
+    // 🔋 センサー頻度設定（新規）
+    this.sensorFrequency = {
+      compass: 10,  // 10Hz
+      sonar: 15,    // 15Hz
+      ar: 20        // 20Hz
+    };
+    this.currentFrequency = 10;
+    this.batterySaverMode = false;
+    
     // コールバック
     this.onUpdate = null;
     this.onModeChange = null;
     
     // プラットフォーム情報（iPadOS 13+対応）
     this.isIOS = this.detectIOS();
-    //this.isAndroid = this.detectAndroid();
     this.isAndroid = /Android/.test(navigator.userAgent);
     
     // iOS権限状態
@@ -253,7 +265,7 @@ class OrientationManager {
     }
   }
   
-  // ========== AbsoluteOrientationSensor ==========
+  // ========== AbsoluteOrientationSensor（🔋頻度設定追加） ==========
   async startAbsoluteSensor() {
     try {
       // 権限チェック
@@ -268,9 +280,9 @@ class OrientationManager {
         return false;
       }
       
-      // センサー初期化
+      // 🔋 センサー初期化（頻度設定を適用）
       this.absoluteSensor = new AbsoluteOrientationSensor({
-        frequency: 30,
+        frequency: this.currentFrequency,  // 動的頻度
         referenceFrame: 'device'
       });
       
@@ -320,7 +332,7 @@ class OrientationManager {
       });
       
       if (this.mode === 'absolute-sensor' && !errorOccurred) {
-        this.log('✅ AbsoluteOrientationSensor開始');
+        this.log(`✅ AbsoluteOrientationSensor開始 (${this.currentFrequency}Hz)`);
         return true;
       } else {
         if (this.absoluteSensor) {
@@ -602,10 +614,56 @@ class OrientationManager {
     return this.mode === 'relative' && !this.isCalibrated;
   }
   
-  // ========== モード切替 ==========
+  // ========== 🔋 モード切替（頻度変更付き） ==========
   setMode(viewMode) {
     this.currentViewMode = viewMode;
-    this.log(`🔄 ビューモード切替: ${viewMode}`);
+    
+    // 🔋 省電力モードでない場合のみ頻度を変更
+    if (!this.batterySaverMode) {
+      const newFrequency = this.sensorFrequency[viewMode] || 10;
+      
+      if (newFrequency !== this.currentFrequency) {
+        this.currentFrequency = newFrequency;
+        this._restartSensorWithNewFrequency();
+      }
+    }
+    
+    this.log(`🔄 ビューモード切替: ${viewMode} (${this.currentFrequency}Hz)`);
+  }
+  
+  // ========== 🔋 センサー再起動（頻度変更用） ==========
+  _restartSensorWithNewFrequency() {
+    // AbsoluteOrientationSensorの場合のみ再起動
+    if (this.mode === 'absolute-sensor' && this.absoluteSensor) {
+      this.log(`🔄 センサー再起動: ${this.currentFrequency}Hz`);
+      
+      try {
+        this.absoluteSensor.stop();
+      } catch (e) {
+        // 既に停止している可能性
+      }
+      
+      // 新しい頻度で再起動
+      this.startAbsoluteSensor();
+    }
+  }
+  
+  // ========== 🔋 省電力モード（新規） ==========
+  setBatterySaverMode(enabled) {
+    this.batterySaverMode = enabled;
+    
+    if (enabled) {
+      // すべてのモードで頻度を半減
+      this.currentFrequency = Math.max(5, Math.floor(this.currentFrequency / 2));
+      this.log(`🔋 省電力モードON: ${this.currentFrequency}Hz`);
+    } else {
+      // 通常モードに戻す
+      this.currentFrequency = this.sensorFrequency[this.currentViewMode] || 10;
+      this.log(`🔋 省電力モードOFF: ${this.currentFrequency}Hz`);
+    }
+    
+    // センサー再起動
+    this._restartSensorWithNewFrequency();
   }
   
   // ========== コールバック ==========
@@ -671,6 +729,10 @@ class OrientationManager {
         requestPermission: typeof DeviceOrientationEvent !== 'undefined' && 
                           typeof DeviceOrientationEvent.requestPermission === 'function'
       },
+      battery: {
+        frequency: this.currentFrequency + 'Hz',
+        batterySaverMode: this.batterySaverMode
+      },
       updates: this.updateCount,
       lastUpdate: this.lastUpdateTime ? new Date(this.lastUpdateTime).toISOString() : 'N/A'
     };
@@ -693,7 +755,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ OrientationManager v1.5.1 (Android検出強化版) 読み込み完了');
+  debugLog('✅ OrientationManager v1.6.0 (バッテリー最適化版) 読み込み完了');
 } else {
-  console.log('[OrientationManager] v1.5.1 - Android detection enhanced with detailed logging');
+  console.log('[OrientationManager] v1.6.0 - Battery optimization with dynamic sensor frequency');
 }
