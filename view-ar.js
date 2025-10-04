@@ -12,6 +12,10 @@
  * 
  * 改修: AR最寄りCP情報をAR view外のセクションに移動
  * 改修日: 2025-01-04
+ * 
+ * 改修: マーカー縦軸調整機能追加
+ * 改修日: 2025-01-04
+ * バージョン: 1.3.0
  */
 
 class ARView {
@@ -27,8 +31,12 @@ class ARView {
       },
       selectedFov: 'normal',
       timerDuration: options.timerDuration ?? 300,
-      debugMode: false
+      debugMode: false,
+      verticalOffset: 0  // 縦軸補正値（ピクセル単位）
     };
+    
+    // LocalStorageキー
+    this.STORAGE_KEY_VERTICAL_OFFSET = 'ar_vertical_offset';
     
     // 依存性注入
     this.stateMgr = options.stateMgr;
@@ -111,6 +119,146 @@ class ARView {
     return false;
   }
   
+  // ========== LocalStorage 永続化機能 ==========
+  
+  /**
+   * 補正値をLocalStorageから読み込み
+   */
+  _loadVerticalOffset() {
+    try {
+      const saved = localStorage.getItem(this.STORAGE_KEY_VERTICAL_OFFSET);
+      if (saved !== null) {
+        const value = parseFloat(saved);
+        if (!isNaN(value)) {
+          this.options.verticalOffset = value;
+          this.log(`📂 縦軸補正値復元: ${this.options.verticalOffset}px`);
+        }
+      }
+    } catch (e) {
+      this.log(`⚠️ 縦軸補正値読み込みエラー: ${e.message}`);
+    }
+  }
+  
+  /**
+   * 補正値をLocalStorageに保存
+   */
+  _saveVerticalOffset() {
+    try {
+      localStorage.setItem(
+        this.STORAGE_KEY_VERTICAL_OFFSET, 
+        String(this.options.verticalOffset)
+      );
+      this.log(`💾 縦軸補正値保存: ${this.options.verticalOffset}px`);
+    } catch (e) {
+      this.log(`⚠️ 縦軸補正値保存エラー: ${e.message}`);
+    }
+  }
+  
+  /**
+   * 補正値をリセット
+   */
+  resetVerticalOffset() {
+    this.options.verticalOffset = 0;
+    this._saveVerticalOffset();
+    this._updateOffsetFeedback();
+    this.log('🔄 縦軸補正値リセット');
+  }
+  
+  // ========== マーカー調整ボタンのセットアップ ==========
+  
+  /**
+   * マーカー調整ボタンのイベントハンドラーを設定
+   */
+  _setupMarkerAdjustButtons() {
+    const ADJUST_STEP = 5; // 1回のタップで5px移動
+    const MAX_OFFSET = 100;
+    const MIN_OFFSET = -100;
+    
+    const btnUp = document.getElementById('marker-up');
+    const btnDown = document.getElementById('marker-down');
+    
+    if (btnUp) {
+      btnUp.addEventListener('click', () => {
+        // 上ボタン: マーカーを上に移動（値を減らす）
+        this.options.verticalOffset = Math.max(
+          this.options.verticalOffset - ADJUST_STEP,
+          MIN_OFFSET
+        );
+        this._saveVerticalOffset();
+        this._updateOffsetFeedback();
+      });
+    }
+    
+    if (btnDown) {
+      btnDown.addEventListener('click', () => {
+        // 下ボタン: マーカーを下に移動（値を増やす）
+        this.options.verticalOffset = Math.min(
+          this.options.verticalOffset + ADJUST_STEP,
+          MAX_OFFSET
+        );
+        this._saveVerticalOffset();
+        this._updateOffsetFeedback();
+      });
+    }
+    
+    this.log('✅ マーカー調整ボタン設定完了');
+  }
+  
+  /**
+   * オフセットフィードバック要素を作成
+   */
+  _createOffsetFeedbackElement() {
+    const feedback = document.createElement('div');
+    feedback.id = 'offset-feedback';
+    feedback.className = 'offset-feedback';
+    feedback.textContent = '縦軸: 0px';
+    feedback.style.cssText = `
+      position: absolute;
+      top: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.7);
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 700;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 102;
+    `;
+    
+    const arView = document.getElementById('ar-view');
+    if (arView) {
+      arView.appendChild(feedback);
+    }
+    
+    return feedback;
+  }
+  
+  /**
+   * 調整時のフィードバック表示
+   */
+  _updateOffsetFeedback() {
+    let feedback = document.getElementById('offset-feedback');
+    
+    if (!feedback) {
+      feedback = this._createOffsetFeedbackElement();
+    }
+    
+    feedback.textContent = `縦軸: ${this.options.verticalOffset > 0 ? '+' : ''}${this.options.verticalOffset}px`;
+    feedback.style.opacity = '1';
+    
+    // 2秒後にフェードアウト
+    clearTimeout(this._feedbackTimeout);
+    this._feedbackTimeout = setTimeout(() => {
+      if (feedback) {
+        feedback.style.opacity = '0';
+      }
+    }, 2000);
+  }
+  
   // ========== 開始 ==========
   async start() {
     this.video = document.getElementById('camera');
@@ -121,8 +269,14 @@ class ARView {
       throw new Error('AR要素が見つかりません');
     }
     
+    // 補正値を読み込み
+    this._loadVerticalOffset();
+    
     // デバッグボタンを追加
     this._addDebugButtons();
+    
+    // マーカー調整ボタンのイベント設定
+    this._setupMarkerAdjustButtons();
     
     // カメラ制約(プラットフォーム別・iPad対応強化)
     const constraints = this._getCameraConstraints();
@@ -252,7 +406,18 @@ class ARView {
       this.timerInterval = null;
     }
     
+    if (this._feedbackTimeout) {
+      clearTimeout(this._feedbackTimeout);
+      this._feedbackTimeout = null;
+    }
+    
     this.distanceCache = {};
+    
+    // フィードバック要素を削除
+    const feedback = document.getElementById('offset-feedback');
+    if (feedback && feedback.parentElement) {
+      feedback.parentElement.removeChild(feedback);
+    }
     
     // デバッグボタンを削除
     this._removeDebugButtons();
@@ -389,7 +554,7 @@ class ARView {
     const sizes = this._getMarkerSizeByRange();
     let drawnCount = 0;
     
-    // ========== 追加: 距離範囲の計算 ==========
+    // ========== 距離範囲の計算 ==========
     const distances = [];
     checkpoints.forEach(cp => {
       const d = this._getCachedDistance(
@@ -409,7 +574,6 @@ class ARView {
     // 最小・最大距離
     const minDist = distances.length > 0 ? Math.min(...distances) : 0;
     const maxDist = distances.length > 0 ? Math.max(...distances) : this.options.range;
-    // ==========================================
     
     checkpoints.forEach(cp => {
       // 距離計算(キャッシュ使用)
@@ -437,21 +601,20 @@ class ARView {
       const devicePitchRad = correctedPitchDeg * Math.PI / 180;
       const screenElevAngle = elevAngle - devicePitchRad;
       
-      // 画面座標計算(ピッチ補正済み)
+      // 画面座標計算(ピッチ補正済み + 縦軸オフセット)
       const relRad = rel * Math.PI / 180;
       const x = w/2 + (relRad / this.options.fovH) * w;
-      const y = h/2 - screenElevAngle / this.options.fovV * h;
+      const y = h/2 - screenElevAngle / this.options.fovV * h + this.options.verticalOffset;
       
       // 画面外チェック(マージン付き)
       if (x < -50 || x > w + 50 || y < -50 || y > h + 50) return;
       
-      // ========== 修正: 色の決定 ==========
+      // ========== 色の決定 ==========
       // すべてのCPで距離ベースの色を使用
       const markerColor = this._getDistanceColor(d, minDist, maxDist);
       
       // 完了状態は縁の色で表現
       const borderColor = completedCheckpoints.has(cp.id) ? '#48bb78' : '#fff';
-      // ====================================
       
       // マーカー描画
       const r = sizes.marker / 2;
@@ -508,10 +671,10 @@ class ARView {
   
   _drawDebugInfo(ctx, w, h) {
     ctx.fillStyle = 'rgba(0,0,0,0.85)';
-    ctx.fillRect(10, 10, 320, 280);
+    ctx.fillRect(10, 10, 320, 300);
     ctx.strokeStyle = '#00ff00';
     ctx.lineWidth = 2;
-    ctx.strokeRect(10, 10, 320, 280);
+    ctx.strokeRect(10, 10, 320, 300);
     
     ctx.fillStyle = '#00ff00';
     ctx.font = 'bold 12px monospace';
@@ -550,6 +713,12 @@ class ARView {
       ctx.fillStyle = '#00ff00';
       
       ctx.fillText(`Mode: ${mode}`, 15, y); y += lineHeight;
+      
+      // 縦軸オフセット
+      ctx.fillStyle = '#ff6b9d';
+      ctx.fillText(`V Offset: ${this.options.verticalOffset}px`, 15, y); y += lineHeight;
+      ctx.fillStyle = '#00ff00';
+      
       y += 5;
     }
     
@@ -991,6 +1160,7 @@ class ARView {
     report.push('【設定】');
     report.push(`レンジ: ${this.options.range}m`);
     report.push(`FOV: ${Math.round(this.options.fovH*180/Math.PI)}° × ${Math.round(this.options.fovV*180/Math.PI)}°`);
+    report.push(`縦軸オフセット: ${this.options.verticalOffset}px`);
     report.push(`デバッグモード: ${this.options.debugMode ? 'ON' : 'OFF'}`);
     
     const message = report.join('\n');
@@ -1064,7 +1234,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ ARView v1.2.1 (AR最寄り情報セクション分離版) 読み込み完了');
+  debugLog('✅ ARView v1.3.0 (マーカー縦軸調整機能追加) 読み込み完了');
 } else {
-  console.log('[ARView] v1.2.1 - AR nearest info section separated');
+  console.log('[ARView] v1.3.0 - Marker vertical offset feature added');
 }

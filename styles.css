@@ -190,6 +190,52 @@ main{padding-bottom:40px}
 #ar-nearest-info .info-details{font-size:16px;color:#2d3748;display:flex;gap:15px;flex-wrap:wrap;font-weight:700}
 
 .ar-range{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;align-items:center;background:rgba(0,0,0,.5);padding:10px 12px;border-radius:12px;backdrop-filter:blur(4px);z-index:101}
+
+/* マーカー調整コントロール（新規） */
+.ar-marker-controls{display:flex;gap:6px;align-items:center}
+
+.marker-adjust-btn{
+  pointer-events:auto;
+  background:rgba(255,255,255,0.9);
+  border:2px solid #667eea;
+  border-radius:8px;
+  padding:6px 10px;
+  font-size:16px;
+  color:#2d3748;
+  cursor:pointer;
+  transition:all .2s;
+  line-height:1;
+}
+
+.marker-adjust-btn:hover{
+  background:#667eea;
+  color:#fff;
+  transform:scale(1.05);
+}
+
+.marker-adjust-btn:active{
+  transform:scale(0.95);
+  box-shadow:0 2px 8px rgba(102,126,234,.5);
+}
+
+/* オフセットフィードバック（新規） */
+.offset-feedback{
+  position:absolute;
+  top:60px;
+  left:50%;
+  transform:translateX(-50%);
+  background:rgba(0,0,0,0.7);
+  color:#fff;
+  padding:8px 16px;
+  border-radius:20px;
+  font-size:14px;
+  font-weight:700;
+  opacity:0;
+  transition:opacity 0.3s;
+  pointer-events:none;
+  z-index:102;
+}
+
 .ar-fov-selector{display:flex;gap:6px}
 .ar-range-selector{display:flex;gap:6px}
 .fov-btn,.range-btn{pointer-events:auto;background:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:800;font-size:13px;color:var(--text);cursor:pointer;transition:all .2s}

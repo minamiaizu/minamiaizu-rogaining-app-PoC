@@ -212,10 +212,15 @@
         </div>
         
         <div class="ar-range">
-          <div class="ar-fov-selector">
-            <button type="button" class="fov-btn" data-fov="wide">広角</button>
-            <button type="button" class="fov-btn active" data-fov="normal">標準</button>
-            <button type="button" class="fov-btn" data-fov="tele">望遠</button>
+          <!-- マーカー調整ボタン付きFOVセレクター -->
+          <div class="ar-marker-controls">
+            <button type="button" class="marker-adjust-btn" id="marker-down" title="マーカーを下に移動" aria-label="マーカーを下に移動">🔽</button>
+            <div class="ar-fov-selector">
+              <button type="button" class="fov-btn" data-fov="wide">広角</button>
+              <button type="button" class="fov-btn active" data-fov="normal">標準</button>
+              <button type="button" class="fov-btn" data-fov="tele">望遠</button>
+            </div>
+            <button type="button" class="marker-adjust-btn" id="marker-up" title="マーカーを上に移動" aria-label="マーカーを上に移動">🔼</button>
           </div>
           <div class="ar-range-selector">
             <button type="button" class="range-btn" data-range="250">250m</button>
