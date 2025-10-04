@@ -391,35 +391,6 @@ class OrientationManager {
       yaw = (360 - yaw) % 360;
     }
     
-    // パターン1: マイナス符号あり（現在のコード）
-    let yaw1 = Math.atan2(
-      -2.0 * (w * z + x * y),
-      1.0 - 2.0 * (y * y + z * z)
-    ) * 180 / Math.PI;
-    yaw1 = (yaw1 + 360) % 360;
-    
-    // パターン2: マイナス符号なし
-    let yaw2 = Math.atan2(
-      2.0 * (w * z + x * y),
-      1.0 - 2.0 * (y * y + z * z)
-    ) * 180 / Math.PI;
-    yaw2 = (yaw2 + 360) % 360;
-    
-    // パターン3: 東西反転補正
-    let yaw3 = (360 - yaw1) % 360;
-    
-    // パターン4: 270度回転＋反転
-    let yaw4 = (270 - yaw1 + 360) % 360;
-    
-    // 🔧 1秒に1回だけログ出力
-    const now = Date.now();
-    if (!this._lastDebugLog || now - this._lastDebugLog > 1000) {
-      this._lastDebugLog = now;
-      
-      this.log(`📊 Quaternion: x=${x.toFixed(3)}, y=${y.toFixed(3)}, z=${z.toFixed(3)}, w=${w.toFixed(3)}`);
-      this.log(`🧭 P1(-): ${Math.round(yaw1)}° | P2(+): ${Math.round(yaw2)}° | P3(inv): ${Math.round(yaw3)}° | P4(270): ${Math.round(yaw4)}°`);
-    }
-    
     // Beta (前後傾斜): -180°~180°
     const beta = Math.atan2(
       2.0 * (w * x + y * z),
