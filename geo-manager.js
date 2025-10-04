@@ -1,6 +1,10 @@
 /**
  * GeoManager - 地理情報・位置情報・地図管理
  * Leaflet地図、位置取得、距離・方位計算を担当
+ * 
+ * 改修: トラックポリライン更新ログの間引き
+ * 改修日: 2025-10-04
+ * バージョン: 1.1.0
  */
 
 class GeoManager {
@@ -15,6 +19,9 @@ class GeoManager {
     // コールバック
     this.onPositionUpdate = null;
     this.onPositionError = null;
+    
+    // ログ間引き用カウンター
+    this.lastPolylineLogCount = 0;
   }
   
   // ========== 地図初期化 ==========
@@ -138,7 +145,11 @@ class GeoManager {
     this.map.setView([position.lat, position.lng], zoom);
   }
   
-  // ========== トラックポリライン ==========
+  // ========== トラックポリライン（ログ間引き対応） ==========
+  /**
+   * トラックポリラインを更新
+   * @param {Array} trackPoints - トラックポイントの配列
+   */
   updateTrackPolyline(trackPoints) {
     if (!this.map) return;
     
@@ -157,7 +168,17 @@ class GeoManager {
         opacity: 0.7
       }).addTo(this.map);
       
-      this.log(`🛤️ トラックポリライン更新: ${trackPoints.length}点`);
+      // ログの間引き: 10点ごと、または初回のみ
+      const shouldLog = (
+        trackPoints.length === 2 || // 初回（2点目）
+        trackPoints.length % 10 === 0 || // 10点ごと
+        trackPoints.length - this.lastPolylineLogCount >= 10 // 前回ログから10点経過
+      );
+      
+      if (shouldLog) {
+        this.log(`🛤️ トラックポリライン更新: ${trackPoints.length}点`);
+        this.lastPolylineLogCount = trackPoints.length;
+      }
     }
   }
   
@@ -350,7 +371,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ GeoManager 読み込み完了');
+  debugLog('✅ GeoManager v1.1.0 (ログ間引き対応) 読み込み完了');
 } else {
-  console.log('[GeoManager] Loaded');
+  console.log('[GeoManager] v1.1.0 - Log throttling support');
 }

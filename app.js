@@ -17,6 +17,10 @@
  * 改修: オフライン時間カウンター追加、オーバーレイ完全透過化
  * 改修日: 2025-10-04
  * バージョン: 2.2.0
+ * 
+ * 改修: トラッキングフィルタリング追加、ログ頻度最適化
+ * 改修日: 2025-10-04
+ * バージョン: 2.3.0
  */
 
 /* ======== Service Worker ======== */
@@ -66,6 +70,10 @@ let offlineOverlay = null;
 // 🆕 オフライン時間カウンター
 let offlineTimer = null;
 let offlineStartTime = null;
+
+// 🆕 トラッキングフィルタリング用変数
+let lastRecordedPoint = null;
+let lastRecordedTime = null;
 
 /* ======== マネージャーインスタンス ======== */
 let stateMgr, geoMgr, compassView, sonarView, arView, orientationMgr;
@@ -424,7 +432,7 @@ function getCurrentLocation() {
       document.getElementById('check-button').disabled = false;
       
       updateUI();
-      stateMgr.save();
+      stateMgr.save(true); // サイレント保存
     })
     .catch(err => {
       alert('位置情報の取得に失敗しました。');
@@ -441,7 +449,7 @@ async function handlePhoto(e) {
     stateMgr.addPhoto(dataUrl, stateMgr.currentPosition);
     
     updateUI();
-    stateMgr.save();
+    stateMgr.save(true); // サイレント保存
     
     e.target.value = '';
   } catch (error) {
@@ -486,7 +494,44 @@ function checkNearby() {
   }
   
   updateUI();
-  stateMgr.save();
+  stateMgr.save(); // 通常保存（ログ出力あり）
+}
+
+/* ======== 🆕 トラッキングフィルタリング ======== */
+/**
+ * トラックポイントを記録すべきかチェック
+ * @param {Object} position - 現在の位置情報
+ * @param {Object} lastPoint - 最後に記録した位置情報
+ * @param {number} lastTime - 最後に記録した時刻(ms)
+ * @param {Object} config - トラッキング設定
+ * @returns {boolean} 記録すべきならtrue
+ */
+function checkShouldRecordTrackPoint(position, lastPoint, lastTime, config) {
+  // 初回は必ず記録
+  if (!lastPoint || !lastTime) {
+    return true;
+  }
+  
+  // 設定値を取得（デフォルト値あり）
+  const minDistance = config?.minDistanceMeters || 10; // 10m
+  const minInterval = (config?.intervalSeconds || 30) * 1000; // 30秒
+  
+  // 時間チェック
+  const timeElapsed = Date.now() - lastTime;
+  if (timeElapsed >= minInterval) {
+    return true;
+  }
+  
+  // 距離チェック
+  const distance = geoMgr.distance(
+    lastPoint.lat, lastPoint.lng,
+    position.lat, position.lng
+  );
+  if (distance >= minDistance) {
+    return true;
+  }
+  
+  return false;
 }
 
 /* ======== トラッキング ======== */
@@ -501,6 +546,10 @@ function toggleTracking() {
 function startTracking() {
   stateMgr.setTrackingEnabled(true);
   
+  // トラッキングフィルタリング用変数を初期化
+  lastRecordedPoint = null;
+  lastRecordedTime = null;
+  
   // 🔋 省電力モードに応じた設定を取得
   const trackingConfig = stateMgr.config?.tracking || {};
   const options = {
@@ -510,28 +559,44 @@ function startTracking() {
   };
   
   geoMgr.startWatchPosition((position) => {
+    // 現在位置は常に更新
     stateMgr.setPosition(position);
-    stateMgr.addTrackPoint(position);
-    
     geoMgr.updateCurrentPositionMarker(position);
-    geoMgr.updateTrackPolyline(stateMgr.trackPoints);
+    
+    // トラックポイント記録のフィルタリング
+    const shouldRecord = checkShouldRecordTrackPoint(
+      position,
+      lastRecordedPoint,
+      lastRecordedTime,
+      trackingConfig
+    );
+    
+    if (shouldRecord) {
+      stateMgr.addTrackPoint(position);
+      geoMgr.updateTrackPolyline(stateMgr.trackPoints);
+      
+      // 記録地点と時刻を更新
+      lastRecordedPoint = position;
+      lastRecordedTime = Date.now();
+      
+      // サイレント保存（5点ごと）
+      if (stateMgr.trackPoints.length % 5 === 0) {
+        stateMgr.save(true); // サイレントモード
+      }
+    }
     
     updateUI();
-    
-    if (stateMgr.trackPoints.length % 5 === 0) {
-      stateMgr.save();
-    }
   }, options);
   
   updateTrackingButton();
-  debugLog(`📍 軌跡記録を開始 (省電力: ${batterySaverMode ? 'ON' : 'OFF'})`);
+  debugLog(`📍 軌跡記録を開始 (省電力: ${batterySaverMode ? 'ON' : 'OFF'}, フィルタ: ${trackingConfig.minDistanceMeters || 10}m/${trackingConfig.intervalSeconds || 30}s)`);
 }
 
 function stopTracking() {
   stateMgr.setTrackingEnabled(false);
   geoMgr.stopWatchPosition();
   updateTrackingButton();
-  stateMgr.save();
+  stateMgr.save(); // 停止時は通常保存
   debugLog('📍 軌跡記録を停止');
 }
 
@@ -577,8 +642,9 @@ function startTimer() {
       stateMgr.save();
     }
     
+    // サイレント保存（30秒ごと）
     if (remaining % 30 === 0) {
-      stateMgr.save();
+      stateMgr.save(true);
     }
   };
   

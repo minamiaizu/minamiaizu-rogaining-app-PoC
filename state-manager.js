@@ -1,6 +1,10 @@
 /**
  * StateManager - アプリケーション状態管理
  * データの読み込み、保存、管理を担当
+ * 
+ * 改修: サイレント保存モード追加
+ * 改修日: 2025-10-04
+ * バージョン: 1.1.0
  */
 
 class StateManager {
@@ -111,9 +115,11 @@ class StateManager {
         maxZoom: 19
       },
       tracking: {
-        intervalSeconds: 60,
-        highAccuracy: true,
-        timeout: 10000
+        intervalSeconds: 30,
+        minDistanceMeters: 10,
+        highAccuracy: false,
+        timeout: 10000,
+        maximumAge: 30000
       },
       photo: {
         maxWidth: 1280,
@@ -256,8 +262,13 @@ class StateManager {
     return this.remainingTime <= 0;
   }
   
-  // ========== LocalStorage ==========
-  save() {
+  // ========== LocalStorage（サイレントモード対応） ==========
+  /**
+   * データをLocalStorageに保存
+   * @param {boolean} silent - trueの場合、ログを出力しない（デフォルト: false）
+   * @returns {boolean} 保存成功したらtrue
+   */
+  save(silent = false) {
     const data = {
       completedCheckpoints: Array.from(this.completedIds),
       photos: this.photos.map(p => ({
@@ -277,7 +288,12 @@ class StateManager {
     
     try {
       localStorage.setItem(this.storageKey, JSON.stringify(data));
-      this.log('💾 LocalStorage保存');
+      
+      // サイレントモードでない場合のみログ出力
+      if (!silent) {
+        this.log('💾 LocalStorage保存');
+      }
+      
       return true;
     } catch (e) {
       this.log(`❌ LocalStorage保存エラー: ${e.message}`);
@@ -399,7 +415,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ StateManager 読み込み完了');
+  debugLog('✅ StateManager v1.1.0 (サイレント保存対応) 読み込み完了');
 } else {
-  console.log('[StateManager] Loaded');
+  console.log('[StateManager] v1.1.0 - Silent save mode support');
 }
