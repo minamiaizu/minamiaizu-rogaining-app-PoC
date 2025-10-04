@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Favicon.ico Generator</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useRef } = React;
+
+    function FaviconGenerator() {
+      const [svgContent, setSvgContent] = useState(null);
+      const [previewUrls, setPreviewUrls] = useState({});
+      const [generating, setGenerating] = useState(false);
+      const fileInputRef = useRef(null);
+
+      // SVGファイルを読み込み
+      const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setSvgContent(event.target.result);
+          generatePreviews(event.target.result);
+        };
+        reader.readAsText(file);
+      };
+
+      // プレビュー画像を生成
+      const generatePreviews = (svgText) => {
+        const sizes = [16, 32, 48];
+        const previews = {};
+
+        sizes.forEach(size => {
+          const canvas = document.createElement('canvas');
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+
+          const img = new Image();
+          const blob = new Blob([svgText], { type: 'image/svg+xml' });
+          const url = URL.createObjectURL(blob);
+
+          img.onload = () => {
+            ctx.drawImage(img, 0, 0, size, size);
+            previews[size] = canvas.toDataURL('image/png');
+            setPreviewUrls({ ...previews });
+            URL.revokeObjectURL(url);
+          };
+
+          img.src = url;
+        });
+      };
+
+      // ICOファイルを生成
+      const generateFavicon = async () => {
+        if (!svgContent) return;
+
+        setGenerating(true);
+
+        try {
+          const sizes = [16, 32, 48];
+          const pngDataArray = [];
+
+          // 各サイズのPNGデータを生成
+          for (const size of sizes) {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+
+            const img = new Image();
+            const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+
+            await new Promise((resolve) => {
+              img.onload = () => {
+                ctx.drawImage(img, 0, 0, size, size);
+                
+                // PNGデータを取得
+                canvas.toBlob((blob) => {
+                  const reader = new FileReader();
+                  reader.onload = (e) => {
+                    const arrayBuffer = e.target.result;
+                    pngDataArray.push({
+                      size: size,
+                      data: new Uint8Array(arrayBuffer)
+                    });
+                    URL.revokeObjectURL(url);
+                    resolve();
+                  };
+                  reader.readAsArrayBuffer(blob);
+                }, 'image/png');
+              };
+              img.src = url;
+            });
+          }
+
+          // ICOファイルを構築
+          const icoData = buildIcoFile(pngDataArray);
+
+          // ダウンロード
+          const blob = new Blob([icoData], { type: 'image/x-icon' });
+          const downloadUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = downloadUrl;
+          a.download = 'favicon.ico';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(downloadUrl);
+
+        } catch (error) {
+          console.error('Favicon生成エラー:', error);
+          alert('Faviconの生成に失敗しました: ' + error.message);
+        } finally {
+          setGenerating(false);
+        }
+      };
+
+      // ICOファイルフォーマットを構築
+      const buildIcoFile = (pngDataArray) => {
+        const numImages = pngDataArray.length;
+        
+        // ヘッダー（6バイト）+ ディレクトリエントリ（16バイト×画像数）
+        const headerSize = 6 + (16 * numImages);
+        
+        // 全体のサイズを計算
+        let totalSize = headerSize;
+        pngDataArray.forEach(item => {
+          totalSize += item.data.length;
+        });
+
+        const buffer = new ArrayBuffer(totalSize);
+        const view = new DataView(buffer);
+        const uint8View = new Uint8Array(buffer);
+
+        let offset = 0;
+
+        // ICONDIRヘッダー
+        view.setUint16(offset, 0, true); offset += 2;      // Reserved (0)
+        view.setUint16(offset, 1, true); offset += 2;      // Type (1 = ICO)
+        view.setUint16(offset, numImages, true); offset += 2; // Count
+
+        // 各画像のオフセット位置を計算
+        let imageDataOffset = headerSize;
+
+        // ICONDIRENTRYを書き込み
+        pngDataArray.forEach((item) => {
+          const size = item.size;
+          const imageSize = item.data.length;
+
+          view.setUint8(offset, size === 256 ? 0 : size); offset += 1;  // Width
+          view.setUint8(offset, size === 256 ? 0 : size); offset += 1;  // Height
+          view.setUint8(offset, 0); offset += 1;             // Color palette (0)
+          view.setUint8(offset, 0); offset += 1;             // Reserved (0)
+          view.setUint16(offset, 1, true); offset += 2;      // Color planes
+          view.setUint16(offset, 32, true); offset += 2;     // Bits per pixel
+          view.setUint32(offset, imageSize, true); offset += 4; // Image size
+          view.setUint32(offset, imageDataOffset, true); offset += 4; // Image offset
+
+          imageDataOffset += imageSize;
+        });
+
+        // 画像データを書き込み
+        pngDataArray.forEach((item) => {
+          uint8View.set(item.data, offset);
+          offset += item.data.length;
+        });
+
+        return uint8View;
+      };
+
+      return (
+        <div style={{
+          minHeight: '100vh',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          padding: '40px 20px',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+        }}>
+          <div style={{
+            maxWidth: '800px',
+            margin: '0 auto',
+            background: '#fff',
+            borderRadius: '20px',
+            padding: '40px',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+          }}>
+            <h1 style={{
+              fontSize: '32px',
+              fontWeight: '800',
+              color: '#2d3748',
+              marginBottom: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <span style={{ fontSize: '40px' }}>🎨</span>
+              Favicon.ico Generator
+            </h1>
+            <p style={{
+              color: '#718096',
+              fontSize: '16px',
+              marginBottom: '30px'
+            }}>
+              SVGファイルから複数サイズ（16x16, 32x32, 48x48）を含むfavicon.icoを生成します
+            </p>
+
+            {/* ファイル選択 */}
+            <div style={{
+              border: '3px dashed #cbd5e0',
+              borderRadius: '12px',
+              padding: '40px',
+              textAlign: 'center',
+              marginBottom: '30px',
+              background: svgContent ? '#f0fff4' : '#f7fafc',
+              borderColor: svgContent ? '#48bb78' : '#cbd5e0',
+              transition: 'all 0.3s'
+            }}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".svg"
+                onChange={handleFileChange}
+                style={{ display: 'none' }}
+              />
+              <button
+                onClick={() => fileInputRef.current.click()}
+                style={{
+                  background: '#667eea',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '16px 32px',
+                  borderRadius: '10px',
+                  fontSize: '18px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)'
+                }}
+                onMouseOver={(e) => {
+                  e.target.style.transform = 'translateY(-2px)';
+                  e.target.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.5)';
+                }}
+                onMouseOut={(e) => {
+                  e.target.style.transform = 'translateY(0)';
+                  e.target.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
+                }}
+              >
+                📁 SVGファイルを選択
+              </button>
+              {svgContent && (
+                <div style={{
+                  marginTop: '20px',
+                  color: '#48bb78',
+                  fontWeight: '700',
+                  fontSize: '16px'
+                }}>
+                  ✅ ファイル読み込み完了
+                </div>
+              )}
+            </div>
+
+            {/* プレビュー */}
+            {Object.keys(previewUrls).length > 0 && (
+              <div style={{
+                background: '#f7fafc',
+                borderRadius: '12px',
+                padding: '30px',
+                marginBottom: '30px'
+              }}>
+                <h2 style={{
+                  fontSize: '20px',
+                  fontWeight: '700',
+                  color: '#2d3748',
+                  marginBottom: '20px'
+                }}>
+                  🔍 プレビュー
+                </h2>
+                <div style={{
+                  display: 'flex',
+                  gap: '30px',
+                  justifyContent: 'center',
+                  alignItems: 'flex-end'
+                }}>
+                  {[16, 32, 48].map(size => (
+                    previewUrls[size] && (
+                      <div key={size} style={{
+                        textAlign: 'center'
+                      }}>
+                        <div style={{
+                          background: '#fff',
+                          padding: '20px',
+                          borderRadius: '10px',
+                          border: '2px solid #e2e8f0',
+                          marginBottom: '10px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <img
+                            src={previewUrls[size]}
+                            alt={`${size}x${size}`}
+                            style={{
+                              width: size,
+                              height: size,
+                              imageRendering: size <= 32 ? 'pixelated' : 'auto'
+                            }}
+                          />
+                        </div>
+                        <div style={{
+                          fontSize: '14px',
+                          fontWeight: '700',
+                          color: '#4a5568'
+                        }}>
+                          {size}×{size}px
+                        </div>
+                      </div>
+                    )
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 生成ボタン */}
+            <button
+              onClick={generateFavicon}
+              disabled={!svgContent || generating}
+              style={{
+                width: '100%',
+                background: svgContent && !generating ? '#48bb78' : '#cbd5e0',
+                color: '#fff',
+                border: 'none',
+                padding: '18px',
+                borderRadius: '10px',
+                fontSize: '18px',
+                fontWeight: '700',
+                cursor: svgContent && !generating ? 'pointer' : 'not-allowed',
+                transition: 'all 0.2s',
+                boxShadow: svgContent && !generating ? '0 4px 12px rgba(72, 187, 120, 0.4)' : 'none'
+              }}
+              onMouseOver={(e) => {
+                if (svgContent && !generating) {
+                  e.target.style.transform = 'translateY(-2px)';
+                  e.target.style.boxShadow = '0 6px 20px rgba(72, 187, 120, 0.5)';
+                }
+              }}
+              onMouseOut={(e) => {
+                if (svgContent && !generating) {
+                  e.target.style.transform = 'translateY(0)';
+                  e.target.style.boxShadow = '0 4px 12px rgba(72, 187, 120, 0.4)';
+                }
+              }}
+            >
+              {generating ? '⏳ 生成中...' : '⬇️ favicon.ico をダウンロード'}
+            </button>
+
+            {/* 使い方 */}
+            <div style={{
+              marginTop: '40px',
+              padding: '20px',
+              background: '#edf2f7',
+              borderRadius: '10px',
+              borderLeft: '4px solid #667eea'
+            }}>
+              <h3 style={{
+                fontSize: '16px',
+                fontWeight: '700',
+                color: '#2d3748',
+                marginBottom: '10px'
+              }}>
+                💡 使い方
+              </h3>
+              <ol style={{
+                margin: 0,
+                paddingLeft: '20px',
+                color: '#4a5568',
+                lineHeight: '1.8'
+              }}>
+                <li>SVGファイルを選択</li>
+                <li>プレビューで確認</li>
+                <li>「favicon.ico をダウンロード」ボタンをクリック</li>
+                <li>生成されたfavicon.icoをプロジェクトのルートに配置</li>
+              </ol>
+            </div>
+
+            {/* 技術情報 */}
+            <div style={{
+              marginTop: '20px',
+              padding: '15px',
+              background: '#fff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              fontSize: '13px',
+              color: '#718096'
+            }}>
+              <strong style={{ color: '#4a5568' }}>📦 含まれるサイズ:</strong> 16x16, 32x32, 48x48 (32-bit PNG)<br/>
+              <strong style={{ color: '#4a5568' }}>🔧 フォーマット:</strong> Multi-Icon ICO (Windows/Web標準)
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<FaviconGenerator />, document.getElementById('root'));
+  </script>
+</body>
+</html>
