@@ -16,6 +16,10 @@
  * 改修: マーカー縦軸調整機能追加
  * 改修日: 2025-10-04
  * バージョン: 1.3.0
+ * 
+ * 改修: デバッグボタン表示ON/OFF機能追加
+ * 改修日: 2025-10-04
+ * バージョン: 1.4.0
  */
 
 class ARView {
@@ -37,6 +41,10 @@ class ARView {
     
     // LocalStorageキー
     this.STORAGE_KEY_VERTICAL_OFFSET = 'ar_vertical_offset';
+    this.STORAGE_KEY_DEBUG_BUTTONS = 'ar_debug_buttons_visible';
+    
+    // デバッグボタン表示状態
+    this.debugButtonsVisible = false;
     
     // 依存性注入
     this.stateMgr = options.stateMgr;
@@ -119,7 +127,7 @@ class ARView {
     return false;
   }
   
-  // ========== LocalStorage 永続化機能 ==========
+  // ========== LocalStorage 永続化機能 (縦軸補正) ==========
   
   /**
    * 補正値をLocalStorageから読み込み
@@ -162,6 +170,82 @@ class ARView {
     this._saveVerticalOffset();
     this._updateOffsetFeedback();
     this.log('🔄 縦軸補正値リセット');
+  }
+  
+  // ========== LocalStorage 永続化機能 (デバッグボタン表示状態) ==========
+  
+  /**
+   * デバッグボタン表示状態をLocalStorageから読み込み
+   */
+  _loadDebugButtonsVisibility() {
+    try {
+      const saved = localStorage.getItem(this.STORAGE_KEY_DEBUG_BUTTONS);
+      if (saved !== null) {
+        this.debugButtonsVisible = saved === 'true';
+        this.log(`📂 デバッグボタン表示状態復元: ${this.debugButtonsVisible}`);
+      } else {
+        // 初回はデフォルト値（非表示）
+        this.debugButtonsVisible = false;
+        this.log('📂 デバッグボタン表示状態: デフォルト(非表示)');
+      }
+    } catch (e) {
+      this.log(`⚠️ デバッグボタン表示状態読み込みエラー: ${e.message}`);
+      this.debugButtonsVisible = false;
+    }
+  }
+  
+  /**
+   * デバッグボタン表示状態をLocalStorageに保存
+   */
+  _saveDebugButtonsVisibility() {
+    try {
+      localStorage.setItem(
+        this.STORAGE_KEY_DEBUG_BUTTONS,
+        String(this.debugButtonsVisible)
+      );
+      this.log(`💾 デバッグボタン表示状態保存: ${this.debugButtonsVisible}`);
+    } catch (e) {
+      this.log(`⚠️ デバッグボタン表示状態保存エラー: ${e.message}`);
+    }
+  }
+  
+  /**
+   * デバッグボタンの表示/非表示を切り替え
+   * @param {boolean} visible - true: 表示, false: 非表示
+   */
+  toggleDebugButtons(visible) {
+    this.debugButtonsVisible = visible;
+    
+    if (visible) {
+      this._addDebugButtons();
+      this.log('✅ デバッグボタンを表示');
+    } else {
+      this._removeDebugButtons();
+      this.log('ℹ️ デバッグボタンを非表示');
+    }
+    
+    this._saveDebugButtonsVisibility();
+  }
+  
+  /**
+   * チェックボックスのイベントリスナーを設定
+   */
+  _setupDebugToggle() {
+    const checkbox = document.getElementById('ar-debug-enable');
+    if (!checkbox) {
+      this.log('⚠️ ar-debug-enable チェックボックスが見つかりません');
+      return;
+    }
+    
+    // 現在の状態でチェックボックスを設定
+    checkbox.checked = this.debugButtonsVisible;
+    
+    // イベントリスナー設定
+    checkbox.addEventListener('change', (e) => {
+      this.toggleDebugButtons(e.target.checked);
+    });
+    
+    this.log('✅ デバッグボタン切替チェックボックス設定完了');
   }
   
   // ========== マーカー調整ボタンのセットアップ ==========
@@ -269,11 +353,17 @@ class ARView {
       throw new Error('AR要素が見つかりません');
     }
     
-    // 補正値を読み込み
+    // 設定を読み込み
     this._loadVerticalOffset();
+    this._loadDebugButtonsVisibility();
     
-    // デバッグボタンを追加
-    this._addDebugButtons();
+    // チェックボックスのイベント設定
+    this._setupDebugToggle();
+    
+    // デバッグボタンの初期表示
+    if (this.debugButtonsVisible) {
+      this._addDebugButtons();
+    }
     
     // マーカー調整ボタンのイベント設定
     this._setupMarkerAdjustButtons();
@@ -421,6 +511,10 @@ class ARView {
     
     // デバッグボタンを削除
     this._removeDebugButtons();
+    
+    // 設定を保存
+    this._saveVerticalOffset();
+    this._saveDebugButtonsVisibility();
     
     this.log('ℹ️ AR停止');
   }
@@ -971,7 +1065,16 @@ class ARView {
   // ========== デバッグボタン ==========
   _addDebugButtons() {
     const arView = document.getElementById('ar-view');
-    if (!arView || arView.querySelector('.debug-buttons')) return;
+    
+    // すでに存在する場合は追加しない
+    if (!arView || arView.querySelector('.debug-buttons')) {
+      return;
+    }
+    
+    // 表示状態がfalseの場合は追加しない
+    if (!this.debugButtonsVisible) {
+      return;
+    }
     
     const buttonContainer = document.createElement('div');
     buttonContainer.className = 'debug-buttons';
@@ -1050,6 +1153,7 @@ class ARView {
     const buttons = arView?.querySelector('.debug-buttons');
     if (buttons) {
       arView.removeChild(buttons);
+      this.log('ℹ️ ARデバッグボタンを削除');
     }
   }
   
@@ -1162,6 +1266,7 @@ class ARView {
     report.push(`FOV: ${Math.round(this.options.fovH*180/Math.PI)}° × ${Math.round(this.options.fovV*180/Math.PI)}°`);
     report.push(`縦軸オフセット: ${this.options.verticalOffset}px`);
     report.push(`デバッグモード: ${this.options.debugMode ? 'ON' : 'OFF'}`);
+    report.push(`デバッグボタン表示: ${this.debugButtonsVisible ? 'ON' : 'OFF'}`);
     
     const message = report.join('\n');
     console.log(message);
@@ -1234,7 +1339,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ ARView v1.3.0 (マーカー縦軸調整機能追加) 読み込み完了');
+  debugLog('✅ ARView v1.4.0 (デバッグボタン表示ON/OFF機能追加) 読み込み完了');
 } else {
-  console.log('[ARView] v1.3.0 - Marker vertical offset feature added');
+  console.log('[ARView] v1.4.0 - Debug buttons visibility toggle feature added');
 }

@@ -252,3 +252,10 @@ main{padding-bottom:40px}
 .calibration-content h3{margin:0 0 15px 0;font-size:24px;color:#2d3748}
 .calibration-content p{margin:0 0 20px 0;line-height:1.6;color:#4a5568}
 .calibration-content .button{margin:8px 0}
+
+/* ARデバッグボタン表示切替 (新規追加) */
+.ar-debug-toggle{text-align:center;padding:15px;margin-top:10px;border-top:1px solid #e2e8f0}
+
+.ar-debug-toggle label{color:#2d3748;font-size:14px;display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-weight:600}
+
+.ar-debug-toggle input[type="checkbox"]{width:20px;height:20px;cursor:pointer}
