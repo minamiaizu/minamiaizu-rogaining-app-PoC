@@ -10,7 +10,7 @@
  * 改修日: 2025-10-04
  * バージョン: 2.0.0
  * 
- * 改修: 地図タイル自動キャッシュ機能追加
+ * 改修: オフライン時の地図操作改善
  * 改修日: 2025-10-04
  * バージョン: 2.1.0
  */
@@ -56,8 +56,8 @@ let arCapable = false;
 // 🔋 省電力モード状態
 let batterySaverMode = false;
 
-// 🗺️ 地図キャッシュ状態
-let mapCacheEnabled = true;
+// オフラインオーバーレイ要素
+let offlineOverlay = null;
 
 /* ======== マネージャーインスタンス ======== */
 let stateMgr, geoMgr, compassView, sonarView, arView, orientationMgr;
@@ -116,7 +116,7 @@ async function init() {
   const sonarConfig = stateMgr.config?.sonar || {};
   sonarView = new SonarView({
     range: sonarConfig.defaultRange || 1000,
-    scanSpeed: sonarConfig.scanSpeed || 36,
+    scanSpeed: sonarConfig.scanSpeed || 36,  // 🔋 36に変更
     audioEnabled: sonarConfig.audioEnabled || false,
     stateMgr: stateMgr,
     geoMgr: geoMgr,
@@ -157,241 +157,11 @@ async function init() {
   // 10. 🔋 省電力モード復元
   restoreBatterySaverMode();
   
-  // 11. 🗺️ 地図キャッシュ初期化
-  await initMapCache();
-  
   // ========== 自動起動処理 ==========
   // 軌跡記録を自動開始
   startTracking();
   
   debugLog('🎉 アプリケーション初期化完了');
-}
-
-/* ======== 🗺️ 地図キャッシュ機能 ======== */
-
-/**
- * 地図キャッシュの初期化
- */
-async function initMapCache() {
-  debugLog('🗺️ 地図キャッシュ初期化開始');
-  
-  // LocalStorageから設定復元
-  const saved = localStorage.getItem('map_cache_enabled');
-  mapCacheEnabled = saved !== 'false';
-  
-  const checkbox = document.getElementById('auto-map-cache-enable');
-  if (checkbox) {
-    checkbox.checked = mapCacheEnabled;
-  }
-  
-  // 現在のキャッシュ状態を取得
-  await updateMapCacheStatus();
-  
-  // 自動キャッシュが有効な場合、キャッシュを開始
-  if (mapCacheEnabled) {
-    // 2秒待ってから開始（初期化完了を待つ）
-    setTimeout(() => {
-      triggerMapCaching();
-    }, 2000);
-  }
-  
-  debugLog('✅ 地図キャッシュ初期化完了');
-}
-
-/**
- * 地図キャッシュを開始
- */
-async function triggerMapCaching() {
-  const checkpoints = stateMgr?.checkpoints || [];
-  if (checkpoints.length === 0) {
-    debugLog('⚠️ チェックポイントがないためキャッシュをスキップ');
-    return;
-  }
-  
-  // 矩形範囲計算
-  const bounds = calculateTileBounds(checkpoints);
-  
-  // タイルリスト生成
-  const tiles = generateTileList(bounds, [14, 15, 16]);
-  
-  debugLog(`📦 地図キャッシュ開始: ${tiles.length}枚のタイルをダウンロード`);
-  
-  // Service Workerにメッセージ送信
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    showProgressBar();
-    
-    navigator.serviceWorker.controller.postMessage({
-      type: 'CACHE_MAP_TILES',
-      tiles: tiles
-    });
-  } else {
-    debugLog('⚠️ Service Workerが利用できません');
-  }
-}
-
-/**
- * チェックポイントを含む矩形範囲を計算
- */
-function calculateTileBounds(checkpoints) {
-  let minLat = Infinity, maxLat = -Infinity;
-  let minLng = Infinity, maxLng = -Infinity;
-  
-  checkpoints.forEach(cp => {
-    if (cp.lat < minLat) minLat = cp.lat;
-    if (cp.lat > maxLat) maxLat = cp.lat;
-    if (cp.lng < minLng) minLng = cp.lng;
-    if (cp.lng > maxLng) maxLng = cp.lng;
-  });
-  
-  // バッファ追加（約500m）
-  const buffer = 0.005;
-  
-  return {
-    minLat: minLat - buffer,
-    maxLat: maxLat + buffer,
-    minLng: minLng - buffer,
-    maxLng: maxLng + buffer
-  };
-}
-
-/**
- * タイルリストを生成
- */
-function generateTileList(bounds, zooms) {
-  const tiles = [];
-  
-  zooms.forEach(zoom => {
-    const minTile = latLngToTile(bounds.maxLat, bounds.minLng, zoom);
-    const maxTile = latLngToTile(bounds.minLat, bounds.maxLng, zoom);
-    
-    for (let x = minTile.x; x <= maxTile.x; x++) {
-      for (let y = minTile.y; y <= maxTile.y; y++) {
-        tiles.push({ z: zoom, x: x, y: y });
-      }
-    }
-  });
-  
-  return tiles;
-}
-
-/**
- * 緯度経度からタイル座標に変換
- */
-function latLngToTile(lat, lng, zoom) {
-  const n = Math.pow(2, zoom);
-  const x = Math.floor((lng + 180) / 360 * n);
-  const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 
-         1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n);
-  return { x, y };
-}
-
-/**
- * プログレスバーを表示
- */
-function showProgressBar() {
-  const container = document.getElementById('map-cache-progress-container');
-  if (container) {
-    container.hidden = false;
-  }
-}
-
-/**
- * プログレスバーを非表示
- */
-function hideProgressBar() {
-  const container = document.getElementById('map-cache-progress-container');
-  if (container) {
-    container.hidden = true;
-  }
-}
-
-/**
- * プログレスバーを更新
- */
-function updateProgressBar(current, total) {
-  const fill = document.getElementById('map-cache-progress-fill');
-  const text = document.getElementById('map-cache-progress-text');
-  
-  const percentage = Math.round((current / total) * 100);
-  
-  if (fill) {
-    fill.style.width = `${percentage}%`;
-  }
-  
-  if (text) {
-    text.textContent = `${percentage}% (${current}/${total})`;
-  }
-}
-
-/**
- * 地図キャッシュ状態を更新
- */
-async function updateMapCacheStatus() {
-  const statusEl = document.getElementById('map-cache-status');
-  const countEl = document.getElementById('map-cache-tile-count');
-  
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    // Service Workerにキャッシュ情報をリクエスト
-    navigator.serviceWorker.controller.postMessage({
-      type: 'GET_CACHE_INFO'
-    });
-  } else {
-    if (statusEl) statusEl.textContent = '利用不可';
-    if (countEl) countEl.textContent = '0枚';
-  }
-}
-
-/**
- * 地図キャッシュを削除
- */
-async function clearMapCache() {
-  debugLog('🗑️ 地図キャッシュ削除開始');
-  
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      type: 'CLEAR_MAP_CACHE'
-    });
-    
-    // UIを更新
-    setTimeout(() => {
-      updateMapCacheStatus();
-      debugLog('✅ 地図キャッシュ削除完了');
-      alert('地図キャッシュを削除しました');
-    }, 500);
-  }
-}
-
-/* ======== Service Workerメッセージ受信 ======== */
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.addEventListener('message', (event) => {
-    if (event.data.type === 'CACHE_PROGRESS') {
-      updateProgressBar(event.data.current, event.data.total);
-    } else if (event.data.type === 'CACHE_COMPLETE') {
-      hideProgressBar();
-      updateMapCacheStatus();
-      debugLog(`✅ 地図キャッシュ完了: ${event.data.total}枚（失敗: ${event.data.failed || 0}枚）`);
-      
-      showNotification({
-        type: 'success',
-        message: `✅ 地図キャッシュ完了: ${event.data.total}枚のタイルをダウンロードしました`,
-        duration: 5000
-      });
-    } else if (event.data.type === 'CACHE_INFO') {
-      const statusEl = document.getElementById('map-cache-status');
-      const countEl = document.getElementById('map-cache-tile-count');
-      
-      if (statusEl) {
-        statusEl.textContent = event.data.tileCount > 0 ? 'キャッシュ済み' : '未キャッシュ';
-        statusEl.style.color = event.data.tileCount > 0 ? '#48bb78' : '#718096';
-      }
-      
-      if (countEl) {
-        countEl.textContent = `${event.data.tileCount}枚`;
-      }
-    } else if (event.data.type === 'CACHE_CLEARED') {
-      debugLog('✅ 地図キャッシュ削除完了(SW応答)');
-    }
-  });
 }
 
 /* ======== iOSPermissionPrompt表示 ======== */
@@ -611,25 +381,6 @@ function setupEventListeners() {
   
   // 🔋 省電力モードトグル
   document.getElementById('battery-saver-mode')?.addEventListener('change', handleBatterySaverModeChange);
-  
-  // 🗺️ 地図キャッシュ設定
-  document.getElementById('auto-map-cache-enable')?.addEventListener('change', (e) => {
-    mapCacheEnabled = e.target.checked;
-    localStorage.setItem('map_cache_enabled', String(mapCacheEnabled));
-    
-    if (mapCacheEnabled) {
-      debugLog('✅ 自動地図キャッシュ有効化');
-      triggerMapCaching();
-    } else {
-      debugLog('ℹ️ 自動地図キャッシュ無効化');
-    }
-  });
-  
-  document.getElementById('clear-map-cache-btn')?.addEventListener('click', async () => {
-    if (confirm('地図キャッシュを削除しますか？\nオフライン時は地図が表示されなくなります。')) {
-      await clearMapCache();
-    }
-  });
   
   window.addEventListener('resize', () => {
     if (compassView) compassView.updateSize();
@@ -1089,19 +840,84 @@ function restoreBatterySaverMode() {
   }
 }
 
-/* ======== オンライン/オフライン ======== */
+/* ======== オンライン/オフライン（改善版） ======== */
 function updateOnlineStatus() {
   const mapDiv = document.getElementById('map');
   const onlineEl = document.getElementById('online-status');
   
   if (!isOnline) {
-    mapDiv.style.opacity = '0.5';
-    mapDiv.style.pointerEvents = 'none';
-    if (onlineEl) { onlineEl.textContent = '⚠️ オフライン'; onlineEl.style.color = '#e53e3e'; }
+    // ========== オフライン時の処理（改善版） ==========
+    
+    // 🔧 修正: 地図の透明度は通常のまま
+    mapDiv.style.opacity = '1';
+    
+    // 🔧 修正: 地図操作は許可（GPSマーカー表示・移動・ズームを可能に）
+    mapDiv.style.pointerEvents = 'auto';
+    
+    // ステータス表示を更新
+    if (onlineEl) { 
+      onlineEl.textContent = '📡 オフライン'; 
+      onlineEl.style.color = '#ed8936'; // オレンジ色
+    }
+    
+    // オフラインオーバーレイを表示
+    showOfflineOverlay();
+    
+    debugLog('📡 オフラインモード: 地図操作は可能、タイルのみ非表示');
+    
   } else {
+    // ========== オンライン時の処理 ==========
+    
     mapDiv.style.opacity = '1';
     mapDiv.style.pointerEvents = 'auto';
-    if (onlineEl) { onlineEl.textContent = '✅ オンライン'; onlineEl.style.color = '#48bb78'; }
+    
+    if (onlineEl) { 
+      onlineEl.textContent = '✅ オンライン'; 
+      onlineEl.style.color = '#48bb78'; 
+    }
+    
+    // オフラインオーバーレイを削除
+    hideOfflineOverlay();
+    
+    debugLog('✅ オンラインモード');
+  }
+}
+
+/**
+ * オフラインオーバーレイを表示
+ */
+function showOfflineOverlay() {
+  // 既に存在する場合は何もしない
+  if (offlineOverlay && offlineOverlay.parentElement) {
+    return;
+  }
+  
+  // オーバーレイ要素を作成
+  offlineOverlay = document.createElement('div');
+  offlineOverlay.className = 'offline-map-overlay';
+  offlineOverlay.innerHTML = `
+    <div class="offline-badge">
+      📡 オフラインモード
+    </div>
+    <div class="offline-message">
+      地図タイルは表示されませんが、<br>
+      GPS・マーカー・軌跡は利用可能です
+    </div>
+  `;
+  
+  const mapDiv = document.getElementById('map');
+  if (mapDiv) {
+    mapDiv.appendChild(offlineOverlay);
+  }
+}
+
+/**
+ * オフラインオーバーレイを削除
+ */
+function hideOfflineOverlay() {
+  if (offlineOverlay && offlineOverlay.parentElement) {
+    offlineOverlay.parentElement.removeChild(offlineOverlay);
+    offlineOverlay = null;
   }
 }
 
@@ -1109,12 +925,17 @@ window.addEventListener('online', () => {
   isOnline = true; 
   updateOnlineStatus(); 
   debugLog('✅ オンラインに復帰'); 
+  
+  // 地図タイルを再読み込み
+  if (geoMgr && geoMgr.map) {
+    geoMgr.map.invalidateSize();
+  }
 });
 
 window.addEventListener('offline', () => { 
   isOnline = false; 
   updateOnlineStatus(); 
-  debugLog('⚠️ オフライン'); 
+  debugLog('📡 オフラインに切り替わりました'); 
 });
 
 /* ======== PWA状態 ======== */
