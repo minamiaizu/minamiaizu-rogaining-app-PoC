@@ -170,9 +170,9 @@ class ARView {
    * マーカー調整ボタンのイベントハンドラーを設定
    */
   _setupMarkerAdjustButtons() {
-    const ADJUST_STEP = 5; // 1回のタップで5px移動
-    const MAX_OFFSET = 100;
-    const MIN_OFFSET = -100;
+    const ADJUST_STEP = 10; // 1回のタップで10px移動
+    const MAX_OFFSET = 200;
+    const MIN_OFFSET = -200;
     
     const btnUp = document.getElementById('marker-up');
     const btnDown = document.getElementById('marker-down');
