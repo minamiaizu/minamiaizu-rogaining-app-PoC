@@ -269,6 +269,49 @@
       </div>
     </section>
 
+    <!-- Map Cache Settings (新規追加) -->
+    <section id="map-cache-settings" class="card">
+      <h3>🗺️ 地図キャッシュ設定</h3>
+      
+      <!-- 自動キャッシュON/OFF -->
+      <div class="map-cache-toggle">
+        <label>
+          <input type="checkbox" id="auto-map-cache-enable" checked>
+          <div>
+            <div style="font-weight:700;font-size:16px;color:#2d3748;">自動地図キャッシュ（オフライン対応）</div>
+            <div style="font-size:13px;color:#718096;margin-top:4px;">全チェックポイント周辺の地図を自動ダウンロード</div>
+          </div>
+        </label>
+      </div>
+      
+      <!-- キャッシュ状態表示 -->
+      <div class="map-cache-status">
+        <div class="info-item">
+          <span class="info-label">キャッシュ状態</span>
+          <span class="info-value" id="map-cache-status">未キャッシュ</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">タイル数</span>
+          <span class="info-value" id="map-cache-tile-count">0枚</span>
+        </div>
+      </div>
+      
+      <!-- プログレスバー -->
+      <div id="map-cache-progress-container" hidden>
+        <div class="progress-label">
+          地図をダウンロード中... <span id="map-cache-progress-text">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div id="map-cache-progress-fill"></div>
+        </div>
+      </div>
+      
+      <!-- 削除ボタン -->
+      <button class="button danger" id="clear-map-cache-btn" type="button">
+        🗑️ 地図キャッシュを削除
+      </button>
+    </section>
+
     <!-- Info -->
     <section id="info" class="card">
       <h3>📊 現在の状況</h3>
