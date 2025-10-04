@@ -9,6 +9,9 @@
  * 
  * 改修: 距離に応じたCP色変更機能追加
  * 改修日: 2025-01-04
+ * 
+ * 改修: AR最寄りCP情報をAR view外のセクションに移動
+ * 改修日: 2025-01-04
  */
 
 class ARView {
@@ -57,7 +60,7 @@ class ARView {
     // デバッグ
     this._lastDebugLog = 0;
     
-    // プラットフォーム検出（iPadOS対応強化）
+    // プラットフォーム検出(iPadOS対応強化)
     this.isIOS = this.detectIOS();
     this.isAndroid = /Android/.test(navigator.userAgent);
     this.isIPad = this.detectIPad();
@@ -67,7 +70,7 @@ class ARView {
     }
   }
   
-  // ========== iOS/iPadOS検出（強化版） ==========
+  // ========== iOS/iPadOS検出(強化版) ==========
   detectIOS() {
     const ua = navigator.userAgent;
     
@@ -93,7 +96,7 @@ class ARView {
   detectIPad() {
     const ua = navigator.userAgent;
     
-    // iPadOS 13+検出（Macintosh UA + タッチデバイス）
+    // iPadOS 13+検出(Macintosh UA + タッチデバイス)
     if (/Macintosh/.test(ua) && navigator.maxTouchPoints && navigator.maxTouchPoints > 1) {
       this.log('✅ iPadOS検出: Macintosh UA + タッチデバイス');
       return true;
@@ -121,7 +124,7 @@ class ARView {
     // デバッグボタンを追加
     this._addDebugButtons();
     
-    // カメラ制約（プラットフォーム別・iPad対応強化）
+    // カメラ制約(プラットフォーム別・iPad対応強化)
     const constraints = this._getCameraConstraints();
     
     try {
@@ -136,7 +139,7 @@ class ARView {
       this.startTimer();
       this._startRenderLoop();
       
-      this.log('✅ ARカメラ起動成功（背面カメラ優先）');
+      this.log('✅ ARカメラ起動成功(背面カメラ優先)');
     } catch (error) {
       this.log(`⚠️ ARカメラ起動失敗(1回目): ${error.message}`);
       
@@ -160,7 +163,7 @@ class ARView {
         this.startTimer();
         this._startRenderLoop();
         
-        this.log('✅ ARカメラ起動（フォールバック - 背面カメラ）');
+        this.log('✅ ARカメラ起動(フォールバック - 背面カメラ)');
       } catch (e2) {
         this.log(`⚠️ ARカメラ起動失敗(2回目): ${e2.message}`);
         
@@ -180,7 +183,7 @@ class ARView {
           this.startTimer();
           this._startRenderLoop();
           
-          this.log('⚠️ ARカメラ起動（フロントカメラ）');
+          this.log('⚠️ ARカメラ起動(フロントカメラ)');
           
           // ユーザーに通知
           if (this.isIPad || this.isIOS) {
@@ -199,7 +202,7 @@ class ARView {
     if (this.isIPad || this.isIOS) {
       // iOS/iPadOS: exactを使わず、環境カメラを優先
       // iPadではexact制約が不安定なため、通常のfacingModeを使用
-      this.log('📱 iOS/iPadOS用カメラ制約を使用（exact制約なし）');
+      this.log('📱 iOS/iPadOS用カメラ制約を使用(exact制約なし)');
       return {
         video: {
           facingMode: 'environment',  // { exact: 'environment' } から変更
@@ -397,7 +400,7 @@ class ARView {
         cp.lng
       );
       
-      // レンジ内のすべてのCP（完了・未完了問わず）
+      // レンジ内のすべてのCP(完了・未完了問わず)
       if (d <= this.options.range) {
         distances.push(d);
       }
@@ -457,7 +460,7 @@ class ARView {
       ctx.fillStyle = markerColor;
       ctx.fill();
       
-      // 縁（完了状態を示す）
+      // 縁(完了状態を示す)
       ctx.strokeStyle = borderColor;
       ctx.lineWidth = 3;
       ctx.stroke();
@@ -690,15 +693,21 @@ class ARView {
   }
   
   updateNearestInfo(currentPosition, checkpoints, completedIds) {
-    const nearestInfo = document.getElementById('nearest-cp-info');
-    if (!nearestInfo || !currentPosition) return;
+    const infoName = document.querySelector('#ar-nearest-info .info-name');
+    const infoDetails = document.querySelector('#ar-nearest-info .info-details');
+    
+    if (!infoName || !infoDetails || !currentPosition || !this.geoMgr) {
+      if (infoName) infoName.textContent = '最寄りのターゲット';
+      if (infoDetails) infoDetails.innerHTML = '<span style="color:#718096;">位置情報を取得中...</span>';
+      return;
+    }
     
     let nearestCP = null;
     let nearestDist = Infinity;
     
     checkpoints.forEach(cp => {
       if (completedIds.has(cp.id)) return;
-      const d = this.geoMgr?.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng) || 0;
+      const d = this.geoMgr.distance(currentPosition.lat, currentPosition.lng, cp.lat, cp.lng);
       if (d < nearestDist) {
         nearestDist = d;
         nearestCP = cp;
@@ -706,10 +715,20 @@ class ARView {
     });
     
     if (nearestCP) {
-      const elevDiff = (nearestCP.elevation ?? 650) - (currentPosition.elevation ?? 650);
-      const eta = this.geoMgr?.calculateETA(nearestDist, elevDiff) || 0;
+      const elevDiff = (nearestCP.elevation || 650) - (currentPosition.elevation || 650);
+      const eta = this.geoMgr.calculateETA(nearestDist, elevDiff);
       const elevText = elevDiff !== 0 ? ` ${elevDiff > 0 ? '↗+' : '↘'}${Math.abs(Math.round(elevDiff))}m` : '';
-      nearestInfo.textContent = `→ ${nearestCP.name} ${Math.round(nearestDist)}m${elevText} ETA: 約${Math.round(eta)}分`;
+      
+      infoName.textContent = '最寄りのターゲット';
+      infoDetails.innerHTML = `
+        <span style="font-size:18px;color:#667eea;font-weight:800;">${nearestCP.name}</span>
+        <span>📏 ${Math.round(nearestDist)}m${elevText}</span>
+        <span>⏱️ 約${Math.round(eta)}分</span>
+        <span style="background:#667eea;color:#fff;padding:4px 12px;border-radius:12px;">⭐ ${nearestCP.points}点</span>
+      `;
+    } else {
+      infoName.textContent = '最寄りのターゲット';
+      infoDetails.innerHTML = '<span style="color:#48bb78;font-weight:800;font-size:18px;">🎉 すべてクリア!</span>';
     }
   }
   
@@ -1003,7 +1022,7 @@ class ARView {
   }
   
   /**
-   * 距離に応じた色を計算（view-sonar.jsと同じロジック）
+   * 距離に応じた色を計算(view-sonar.jsと同じロジック)
    * @param {number} distance - 対象までの距離(m)
    * @param {number} minDist - 範囲内の最小距離(m)
    * @param {number} maxDist - 範囲内の最大距離(m)
@@ -1013,7 +1032,7 @@ class ARView {
     // 距離差がない場合は緑
     if (maxDist === minDist) return 'hsl(120, 80%, 50%)';
     
-    // 0.0(最近)〜1.0(最遠)に正規化
+    // 0.0(最近)~1.0(最遠)に正規化
     const normalized = (distance - minDist) / (maxDist - minDist);
     
     let hue;
@@ -1045,7 +1064,7 @@ if (typeof window !== 'undefined') {
 
 // 初期化完了ログ
 if (typeof debugLog === 'function') {
-  debugLog('✅ ARView v1.2.0 (iPad対応版 + 距離色変更機能) 読み込み完了');
+  debugLog('✅ ARView v1.2.1 (AR最寄り情報セクション分離版) 読み込み完了');
 } else {
-  console.log('[ARView] v1.2.0 - iPad camera support enhanced + Distance color feature added');
+  console.log('[ARView] v1.2.1 - AR nearest info section separated');
 }

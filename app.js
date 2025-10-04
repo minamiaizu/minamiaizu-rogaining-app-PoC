@@ -2,6 +2,9 @@
  * app.js - iOS権限対応版
  * 依存性注入パターン実装済み
  * iOS 13+のセンサー権限リクエスト対応
+ * 
+ * 改修: AR最寄りCP情報セクションの表示制御を追加
+ * 改修日: 2025-01-04
  */
 
 /* ======== Service Worker ======== */
@@ -136,7 +139,7 @@ async function init() {
   // 9. キャリブレーションUIチェック
   checkCalibrationUI();
   
-  // ========== 自動起動処理（追加） ==========
+  // ========== 自動起動処理(追加) ==========
   // 現在地を自動取得
   //getCurrentLocation().catch(err => {
   //  debugLog(`⚠️ 自動位置取得失敗: ${err.message}`);
@@ -674,6 +677,12 @@ function switchView(view) {
   document.getElementById('compass-view').hidden = view !== 'compass';
   document.getElementById('sonar-view').hidden = view !== 'sonar';
   document.getElementById('ar-view').hidden = view !== 'ar';
+  
+  // AR最寄りCP情報セクションの表示制御(新規)
+  const arNearestInfo = document.getElementById('ar-nearest-info');
+  if (arNearestInfo) {
+    arNearestInfo.hidden = view !== 'ar';
+  }
   
   document.querySelectorAll('#tabs .tab').forEach(tab => {
     tab.classList.toggle('active', tab.dataset.view === view);

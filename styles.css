@@ -182,8 +182,12 @@ main{padding-bottom:40px}
 #pitch-indicator-left .pitch-marker{left:auto;right:-5px;transform:translate(0,-50%)}
 #pitch-indicator-right .pitch-marker{left:-5px;right:auto;transform:translate(0,-50%)}
 
-/* 最寄りCP情報 */
-.nearest-cp-display{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;backdrop-filter:blur(4px);white-space:nowrap;max-width:90%;overflow:hidden;text-overflow:ellipsis}
+/* AR最寄りCP情報セクション (新規) */
+#ar-nearest-info{background:rgba(255,255,255,0.95);margin:15px;padding:15px;border-radius:12px;color:#2d3748;box-shadow:0 2px 8px rgba(0,0,0,0.1);border:1px solid #e2e8f0}
+
+#ar-nearest-info .info-name{font-size:13px;font-weight:700;margin-bottom:10px;color:#4a5568;text-transform:uppercase;letter-spacing:0.5px}
+
+#ar-nearest-info .info-details{font-size:16px;color:#2d3748;display:flex;gap:15px;flex-wrap:wrap;font-weight:700}
 
 .ar-range{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;align-items:center;background:rgba(0,0,0,.5);padding:10px 12px;border-radius:12px;backdrop-filter:blur(4px);z-index:101}
 .ar-fov-selector{display:flex;gap:6px}
@@ -202,4 +206,3 @@ main{padding-bottom:40px}
 .calibration-content h3{margin:0 0 15px 0;font-size:24px;color:#2d3748}
 .calibration-content p{margin:0 0 20px 0;line-height:1.6;color:#4a5568}
 .calibration-content .button{margin:8px 0}
-

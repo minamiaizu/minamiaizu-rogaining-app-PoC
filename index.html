@@ -211,11 +211,6 @@
           </div>
         </div>
         
-        <!-- 最寄りCP情報 -->
-        <div id="nearest-cp-info" class="nearest-cp-display">
-          位置情報を取得中...
-        </div>
-        
         <div class="ar-range">
           <div class="ar-fov-selector">
             <button type="button" class="fov-btn" data-fov="wide">広角</button>
@@ -232,6 +227,12 @@
           <span class="ar-countdown">残り <span id="ar-remaining">05:00</span></span>
         </div>
       </div>
+    </section>
+
+    <!-- AR最寄りCP情報セクション (新規) -->
+    <section id="ar-nearest-info" class="card" hidden>
+      <div class="info-name">最寄りのターゲット</div>
+      <div class="info-details">位置情報を取得中...</div>
     </section>
 
     <!-- Controls -->
